@@ -51,3 +51,13 @@ body.is-fullscreen .wheel-controls{margin:0}
 body.is-fullscreen .boost-button{margin:0;width:150px}
 body.is-fullscreen .energy-meter{margin:0;width:150px}
 @media(min-width:1001px){body.is-fullscreen .game-layout{grid-template-columns:200px minmax(0,1fr) 200px}}
+
+/* ===== AI 神经网络面板 ===== */
+.brain-panel #brainSpark{display:block;width:100%;height:40px;margin-top:10px;border:1px solid rgba(184,223,255,.14);border-radius:5px;background:rgba(5,12,24,.44)}
+.brain-stats{margin-top:9px;display:grid;grid-template-columns:1fr 1fr;gap:6px}
+.brain-stats div{padding:6px 7px;background:rgba(5,12,24,.44);border-radius:5px}
+.brain-stats span{display:block;color:#8292ac;font-size:9px;text-transform:uppercase;letter-spacing:.6px}
+.brain-stats strong{display:block;margin-top:1px;color:#eaf6ff;font:700 15px 'Barlow Condensed',sans-serif}
+.brain-reset{margin-top:9px;width:100%;padding:6px;color:#ff9d9d;border:1px solid rgba(255,120,110,.35);border-radius:5px;background:rgba(60,20,22,.35);font:600 10px 'DM Sans',sans-serif;cursor:pointer}
+.brain-reset:hover{color:#ffd7d7;border-color:rgba(255,120,110,.6)}
+.panel-heading b.converged{background:var(--cyan)}

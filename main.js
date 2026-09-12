@@ -11,6 +11,9 @@ const ui = {
   energyFill: $('#energyFill'), energyMeter: $('.energy-meter'),
   buffBar: $('#buffBar'), resultStats: $('#resultStats'),
   fullscreen: $('#fullscreenButton'),
+  brainSteps: $('#brainSteps'), brainFitness: $('#brainFitness'), brainEpsilon: $('#brainEpsilon'),
+  brainFactor: $('#brainFactor'), brainState: $('#brainState'),
+  brainSpark: $('#brainSpark'), brainReset: $('#brainReset'),
 };
 
 // ===== 常量配置 =====
@@ -87,6 +90,8 @@ function makeBot(name, color, x, y, angle) {
     caution: .75 + Math.random() * .55, // 性格:谨慎度(威胁规避权重)
     inertia: .1 + Math.random() * .09,  // 性格:惯性(转向代价)
     aggro: Math.random(),               // 性格:侵略性(高者会预判截击玩家)
+    pendingExp: null,                   // 强化学习:上一决策的(特征,累计奖励),待下一次决策时做 TD 更新
+    lifeTicks: 0, foods: 0,             // 强化学习:本条生命存活步数 / 进食次数(适应度统计)
   };
 }
 function spawnBot() {
@@ -344,6 +349,76 @@ const dist2 = (dx, dy) => dx * dx + dy * dy;
 const BOT_STEER_OFFSETS = [0, .35, -.35, .75, -.75, 1.2, -1.2, 1.9, -1.9, 2.6, -2.6]; // 候选目标航向(几乎覆盖后半圆)
 const BOT_GROW_CAP = 46; // AI 蛇身体节数上限(约 23 格,保持比成长后的玩家短)
 
+// ===== 强化学习大脑(全体 AI 蛇共享的"蜂群思维") =====
+// 架构:线性 Q 函数 V(a)=w·f(a),f 为候选航向的 6 维特征(与 DQN 同源,用线性层换浏览器实时性)
+// 训练:在线 TD(0) 时序差分 + ε-探索,奖励 = 进食+1/残骸+0.4/死亡-2/时间成本
+// 初始权重等效于手调规则 AI(不回退),权重持久化到 localStorage,越玩越强、跨会话记忆
+const BRAIN_FEATURES = ['偏置', '生存', '转向', '威胁', '觅食', '离墙'];
+const BRAIN_VERSION = 'snakeArenaBrain_v1';
+const brain = {
+  w: null, epsilon: .3, lr: .015, gamma: .97, // 权重 / 探索率 / 学习率 / 折扣因子
+  steps: 0, deaths: 0, foods: 0,               // 累计决策 / 死亡样本 / 进食次数
+  fitness: [],                                 // 最近 50 条生命的适应度(存活步数+进食×5)
+  saveCd: 0,
+  load() {
+    try {
+      const data = JSON.parse(localStorage.getItem(BRAIN_VERSION));
+      if (data && Array.isArray(data.w) && data.w.length === BRAIN_FEATURES.length) {
+        this.w = Float64Array.from(data.w);
+        this.steps = data.steps || 0; this.deaths = data.deaths || 0; this.foods = data.foods || 0;
+        this.epsilon = Math.max(.08, data.epsilon || .3);
+        this.fitness = Array.isArray(data.fitness) ? data.fitness.slice(-50) : [];
+        return;
+      }
+    } catch { /* 存档损坏则重建 */ }
+    this.reset();
+  },
+  reset() {
+    // 初始权重 ≈ 手调规则的线性等效:生存为王,觅食次之,威胁/转向为负贡献
+    this.w = Float64Array.from([.55, 4, -.8, -1, 2.2, .6]);
+    this.epsilon = .3; this.lr = .015; this.steps = 0; this.deaths = 0; this.foods = 0; this.fitness = [];
+    try { localStorage.removeItem(BRAIN_VERSION); } catch { /* 忽略 */ }
+  },
+  value(f) { let v = 0; for (let i = 0; i < f.length; i++) v += this.w[i] * f[i]; return v; },
+  maxNext(cands) { let m = -1e9; for (const c of cands) { const v = this.value(c.f); if (v > m) m = v; } return m; },
+  // 决策:ε 概率在安全候选中随机探索,否则贪心选价值最高(低难度注入手抖噪声)
+  decide(cands, iq) {
+    this.steps++;
+    this.epsilon = Math.max(.08, this.epsilon * .9997);          // 探索率衰减到 8% 保底
+    if (this.lr > .004 && this.steps % 600 === 0) this.lr *= .985; // 学习率退火
+    if (--this.saveCd <= 0) { this.saveCd = 120; this.save(); }    // 节流持久化
+    const noise = (Math.random() - .5) * (1.6 - iq);
+    if (Math.random() < this.epsilon) {
+      const c = cands[Math.floor(Math.random() * cands.length)];
+      c.v = this.value(c.f) + noise;
+      return c;
+    }
+    let best = cands[0]; best.v = this.value(best.f) + noise;
+    for (const c of cands) { const v = this.value(c.f) + noise; c.v = v; if (v > best.v) best = c; }
+    return best;
+  },
+  // TD(0) 更新:w ← w + lr·(r + γ·maxV' − V(f))·f,权重裁剪防发散
+  update(f, reward, nextMax) {
+    const err = reward + this.gamma * nextMax - this.value(f);
+    for (let i = 0; i < f.length; i++) this.w[i] = clamp(this.w[i] + this.lr * err * f[i], -3, 4);
+  },
+  save() {
+    try {
+      localStorage.setItem(BRAIN_VERSION, JSON.stringify({
+        w: [...this.w], epsilon: this.epsilon, steps: this.steps,
+        deaths: this.deaths, foods: this.foods, fitness: this.fitness,
+      }));
+    } catch { /* 存储不可用时忽略 */ }
+  },
+  avgFitness() { return this.fitness.length ? this.fitness.reduce((a, b) => a + b, 0) / this.fitness.length : 0; },
+  dominantFactor() { // 当前权重最大的策略因子(把学习结果"翻译"给人看)
+    let bi = 1;
+    for (let i = 2; i < this.w.length; i++) if (Math.abs(this.w[i]) > Math.abs(this.w[bi])) bi = i;
+    return BRAIN_FEATURES[bi];
+  },
+};
+brain.load();
+
 // 沿角度 a 探测前方畅通距离(碰墙/玩家蛇/其他蛇身体即返回),护盾急转时快速判断哪侧更开阔
 function rayClear(h, a, bot) {
   const dx = Math.cos(a), dy = Math.sin(a);
@@ -424,7 +499,8 @@ function simulateBotPath(bot, targetAngle, obstacles, path) {
   return alive;
 }
 
-// 决策主逻辑:对每个候选航向做前瞻模拟,综合"存活 + 威胁规避 + 目标接近 + 惯性"打分
+// 决策主逻辑:前瞻模拟生成安全候选 → 提取特征向量 → 强化学习大脑打分选择
+// 硬约束:前瞻存活 ≥3 步的方向才能成为候选,探索也不会选到必死方向(安全护栏)
 function botSteer(bot) {
   const h = bot.body[0];
   const iq = difficultyConfig[difficulty].iq;
@@ -433,35 +509,41 @@ function botSteer(bot) {
   const dangers = predictedDangers(bot);
   const goal = chooseGoal(bot, dangers);
   const path = Array.from({ length: look }, () => ({ x: 0, y: 0 }));
-  let best = bot.angle, bestAlive = 0, bestScore = -1e9;
+  const gd = goal ? Math.max(Math.hypot(goal.x - h.x, goal.y - h.y), 2) : 0;
+  const cands = [];
   for (const o of BOT_STEER_OFFSETS) {
     const a = normAngle(bot.angle + o);
     const alive = simulateBotPath(bot, a, obstacles, path);
-    if (!alive) continue;
-    let s = alive * alive * .3 - (look - alive) * 3.5;   // 生存永远第一:早死一步重罚
-    s -= Math.abs(o) * bot.inertia;                     // 少转弯,保持游动惯性
-    for (let i = 0; i < alive; i++) {                   // 轨迹越早贴近预测蛇头,罚分越重
-      for (const g of dangers) {
-        const q = 6.25 - dist2(path[i].x - g.x, path[i].y - g.y); // 半径 2.5 的威胁圈
-        if (q > 0) s -= q * (1 - i / look) * .35 * bot.caution * iq;
-      }
+    if (alive < 3) continue;                            // 短命方向不进候选
+    const end = path[alive - 1];
+    let threat = 0;                                     // 轨迹贴近预测蛇头的程度(越早贴近越危险)
+    for (let i = 0; i < alive; i++) for (const g of dangers) {
+      const q = 6.25 - dist2(path[i].x - g.x, path[i].y - g.y);
+      if (q > 0) threat += q * (1 - i / look);
     }
-    if (goal) {                                         // 靠近目标加分(距离封顶防近距离爆分)
-      const d0 = Math.max(Math.hypot(goal.x - h.x, goal.y - h.y), 2);
-      const d1 = Math.max(Math.hypot(goal.x - path[alive - 1].x, goal.y - path[alive - 1].y), 2);
-      s += (1 / d1 - 1 / d0) * 40 * bot.greed * (.55 + .45 * iq);
-    }
-    s += (Math.random() - .5) * (1.8 - iq);             // 低难度 AI 会"手抖"
-    if (s > bestScore) { bestScore = s; best = a; bestAlive = alive; }
+    const food = goal                                   // 朝目标推进的程度 [0,2]
+      ? clamp((1 / Math.max(Math.hypot(goal.x - end.x, goal.y - end.y), 2) - 1 / gd) * 2 + 1, 0, 2)
+      : 1;
+    const wall = Math.min(Math.min(end.x, arena.w - end.x, end.y, arena.h - end.y) / 8, 1); // 终点离墙余量
+    cands.push({ a, f: [1, alive / look, Math.abs(o) / 2.6, Math.min(threat / 12, 1.5), food, wall] });
   }
-  if (bestAlive < 3) {                                  // 陷入重围:全周扫描选活路最长的方向(替代随机掉头)
+  if (cands.length) {
+    // 完成上一决策的 TD 更新:目标 = 期间奖励 + 折扣 × 本批候选的最优价值
+    if (bot.pendingExp) brain.update(bot.pendingExp.f, bot.pendingExp.r, brain.maxNext(cands));
+    const pick = brain.decide(cands, iq);
+    bot.pendingExp = { f: pick.f, r: -.02 };            // 新决策开始累积奖励(含微小时间成本)
+    bot.targetAngle = pick.a;
+  } else {
+    // 陷入重围:全周扫描选活路最长的方向(纯求生,不经过大脑)
+    if (bot.pendingExp) { brain.update(bot.pendingExp.f, bot.pendingExp.r, 0); bot.pendingExp = null; }
+    let best = bot.angle, bestAlive = 0;
     for (let k = 1; k <= 14; k++) {
       const a = normAngle(bot.angle + (k / 14) * Math.PI * 2);
       const alive = simulateBotPath(bot, a, obstacles, path);
       if (alive > bestAlive) { bestAlive = alive; best = a; }
     }
+    bot.targetAngle = best;
   }
-  bot.targetAngle = best;
 }
 // AI 蛇死亡:化为尸体残留,若死于玩家则计一次击杀
 function killBot(bot, byPlayer, text = '击杀!') {
@@ -469,6 +551,12 @@ function killBot(bot, byPlayer, text = '击杀!') {
   remains.push(...bot.body.map((part) => ({ ...part, color: bot.color })));
   bots.splice(bots.indexOf(bot), 1);
   burst(h.x, h.y, bot.color, 16);
+  // 终局回报:死亡 -2(无后续状态),写入大脑并记录本条生命的适应度
+  if (bot.pendingExp) { brain.update(bot.pendingExp.f, bot.pendingExp.r - 2, 0); bot.pendingExp = null; }
+  brain.deaths++;
+  brain.fitness.push(Math.round(bot.lifeTicks + bot.foods * 5));
+  if (brain.fitness.length > 50) brain.fitness.shift();
+  brain.saveCd = 0; brain.save();
   if (byPlayer) {
     kills++;
     popup(h.x, h.y, text, bot.color, 13);
@@ -501,21 +589,25 @@ function moveBot(bot) {
     return;
   }
   bot.body.unshift(n);
-  // 进食:与玩家争夺场上食物
+  bot.lifeTicks++;
+  // 进食:与玩家争夺场上食物(进食回报 +1/+1.5,喂给强化学习大脑)
   for (let i = foods.length - 1; i >= 0; i--) {
     const f = foods[i];
     if (dist2(n.x - f.x, n.y - f.y) < .4) {
       foods.splice(i, 1); foods.push(makeFood());
       bot.score += f.star ? 35 : 10;
       bot.growth = Math.min(bot.growth + (f.star ? 4 : 1), 12);
+      bot.foods++; brain.foods++;
+      if (bot.pendingExp) bot.pendingExp.r += f.star ? 1.5 : 1;
       burst(f.x, f.y, bot.color, 6);
     }
   }
-  // 吞食残骸(击杀后的战利品争夺)
+  // 吞食残骸(击杀后的战利品争夺,回报 +0.4)
   remains = remains.filter((part) => {
     if (dist2(n.x - part.x, n.y - part.y) < .4) {
       bot.score += 4;
       bot.growth = Math.min(bot.growth + 1, 12);
+      if (bot.pendingExp) bot.pendingExp.r += .4;
       burst(part.x, part.y, bot.color, 4);
       return false;
     }
@@ -543,6 +635,38 @@ function updateEffects(delta) {
 }
 
 // ===== UI 更新 =====
+// 适应度曲线:最近 50 条生命的适应度走势,学习效果可视化
+function drawBrainSpark() {
+  const el = ui.brainSpark; if (!el) return;
+  const c = el.getContext('2d'), w = el.width, hgt = el.height;
+  c.clearRect(0, 0, w, hgt);
+  const data = brain.fitness;
+  if (!data.length) {
+    c.fillStyle = 'rgba(139,154,180,.6)'; c.font = '9px "DM Sans",sans-serif';
+    c.fillText('等待对局数据…', 8, hgt / 2 + 3);
+    return;
+  }
+  const max = Math.max(...data, 1), min = Math.min(...data, 0), span = Math.max(max - min, 1);
+  const x = (i) => 4 + (i / Math.max(data.length - 1, 1)) * (w - 8);
+  const y = (v) => hgt - 5 - ((v - min) / span) * (hgt - 10);
+  c.beginPath(); c.moveTo(x(0), y(data[0]));
+  data.forEach((v, i) => c.lineTo(x(i), y(v)));
+  c.strokeStyle = '#32e6d0'; c.lineWidth = 1.5; c.stroke();
+  c.lineTo(x(data.length - 1), hgt - 2); c.lineTo(x(0), hgt - 2); c.closePath();
+  c.fillStyle = 'rgba(50,230,208,.12)'; c.fill();
+}
+let brainSparkDrawn = -1;
+function updateBrainUI() {
+  if (!ui.brainSteps) return;
+  ui.brainSteps.textContent = brain.steps;
+  ui.brainFitness.textContent = brain.fitness.length ? brain.avgFitness().toFixed(1) : '--';
+  ui.brainEpsilon.textContent = Math.round(brain.epsilon * 100) + '%';
+  ui.brainFactor.textContent = brain.dominantFactor();
+  const learning = brain.epsilon > .09;
+  ui.brainState.textContent = learning ? '学习中' : '已收敛';
+  ui.brainState.classList.toggle('converged', !learning);
+  if (brainSparkDrawn !== brain.fitness.length) { brainSparkDrawn = brain.fitness.length; drawBrainSpark(); }
+}
 function renderBuffs() {
   if (!playerShield && !magnetTimer) { ui.buffBar.innerHTML = ''; return; }
   let html = '';
@@ -570,6 +694,7 @@ function updateUI() {
   ui.rank.innerHTML = entries.slice(0, 6).map((r, i) =>
     `<div class="rank-item ${r.mine ? 'mine' : ''}"><span class="rank-num">${i + 1}</span><i class="rank-dot" style="background:${r.color}"></i><span class="rank-name">${r.name}</span><span class="rank-score">${r.score}</span></div>`
   ).join('');
+  updateBrainUI();
 }
 
 // ===== 渲染 =====
@@ -939,6 +1064,12 @@ if (document.documentElement.requestFullscreen || document.documentElement.webki
 } else {
   ui.fullscreen.style.display = 'none';
 }
+
+// 清除 AI 学习记忆:权重、探索率、统计全部归零重新训练
+if (ui.brainReset) ui.brainReset.addEventListener('click', () => {
+  brain.reset(); brainSparkDrawn = -1; updateBrainUI();
+  beep(320, .07, .04);
+});
 
 // ===== 初始化 =====
 reset();

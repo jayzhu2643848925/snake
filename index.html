@@ -38,6 +38,18 @@
             <div class="stat-card"><span>最高纪录</span><strong id="bestValue">0</strong></div>
           </div>
           <div class="divider"></div>
+          <div class="brain-panel">
+            <div class="panel-heading"><span>AI 神经网络</span><b id="brainState">学习中</b></div>
+            <canvas id="brainSpark" width="182" height="40" aria-label="AI 适应度曲线"></canvas>
+            <div class="brain-stats">
+              <div><span>训练决策</span><strong id="brainSteps">0</strong></div>
+              <div><span>平均适应度</span><strong id="brainFitness">--</strong></div>
+              <div><span>探索率 ε</span><strong id="brainEpsilon">30%</strong></div>
+              <div><span>主策略</span><strong id="brainFactor">生存</strong></div>
+            </div>
+            <button class="brain-reset" id="brainReset" type="button">清除 AI 学习记忆</button>
+          </div>
+          <div class="divider"></div>
           <div class="tip"><span class="tip-icon">✦</span><p>AI 蛇会抢夺食物并伺机截击，绕后突袭可反杀！</p></div>
         </aside>
 
