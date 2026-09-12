@@ -17,12 +17,12 @@ const ui = {
 const W = canvas.width, H = canvas.height, cell = 16;
 const arena = { w: 60, h: 40 };
 const BOT_SPEED = .5, BOT_TURN_RATE = .3; // AI 蛇每步前进距离 / 最大转向角(弧度)
-const BOT_NAMES = ['RIFT', 'NOVA', 'PIXEL', 'ECHO', 'GHOST', 'VIPER', 'ONYX', 'ZETA'];
+const BOT_NAMES = ['RIFT', 'NOVA', 'PIXEL', 'ECHO', 'GHOST', 'VIPER', 'ONYX', 'ZETA', 'BYTE', 'QUARK', 'BLITZ', 'FANG', 'HYDRA', 'WRAITH'];
 const BOT_COLORS = ['#ffbb4e', '#f474cc', '#9a7bff', '#4bc7ff', '#ff785c', '#7cf07c'];
-const difficultyConfig = {
-  easy: { label: '新手', step: 74, bots: 3, boost: .76 },
-  normal: { label: '标准', step: 64, bots: 5, boost: .9 },
-  hard: { label: '极限', step: 48, bots: 8, boost: 1.06 },
+const difficultyConfig = { // iq:AI 智能系数(影响前瞻距离/威胁敏感度/手抖噪声);maxBots:场上 AI 数量上限
+  easy: { label: '新手', step: 74, bots: 3, boost: .76, iq: .72, maxBots: 6 },
+  normal: { label: '标准', step: 64, bots: 5, boost: .9, iq: 1, maxBots: 10 },
+  hard: { label: '极限', step: 48, bots: 8, boost: 1.06, iq: 1.25, maxBots: 14 },
 };
 const COMBO_WINDOW = 2400;                                    // 连击判定窗口(ms)
 const REPLAY_ICON = '<svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>'; // 再来一局按钮的重玩图标
@@ -80,7 +80,14 @@ function makeBot(name, color, x, y, angle) {
   const body = [];
   const segs = 10 + Math.floor(Math.random() * 14); // 每节间距 .5 格,视觉长度 5~12 格
   for (let i = 0; i < segs; i++) body.push({ x: x - Math.cos(angle) * BOT_SPEED * i, y: y - Math.sin(angle) * BOT_SPEED * i });
-  return { name, color, body, angle, targetAngle: angle, steerCd: 0, score: body.length * 7, shield: 5000 };
+  return {
+    name, color, body, angle, targetAngle: angle, steerCd: 0,
+    score: body.length * 7, shield: 5000, growth: 0,
+    greed: .75 + Math.random() * .5,    // 性格:贪食度(食物吸引权重)
+    caution: .75 + Math.random() * .55, // 性格:谨慎度(威胁规避权重)
+    inertia: .1 + Math.random() * .09,  // 性格:惯性(转向代价)
+    aggro: Math.random(),               // 性格:侵略性(高者会预判截击玩家)
+  };
 }
 function spawnBot() {
   const edge = Math.floor(Math.random() * 4), margin = 3;
@@ -223,7 +230,10 @@ function loop(now) {
         if (item.y < 2 || item.y > 38) item.dy *= -1;
         return item.life > 0;
       });
-      if (botSpawnTimer > nextBotSpawn) { spawnBot(); botSpawnTimer = 0; nextBotSpawn = 1800 + Math.random() * 3200; }
+      if (botSpawnTimer > nextBotSpawn) {
+        botSpawnTimer = 0; nextBotSpawn = 1800 + Math.random() * 3200;
+        if (bots.length < difficultyConfig[difficulty].maxBots) spawnBot(); // AI 变聪明后存活更久,限制场上数量
+      }
       if (powerUpTimer > 5000 + Math.random() * 4000 && powerUps.length < 2) { spawnPowerUp(); powerUpTimer = 0; }
       accumulator += delta;
       while (accumulator > step) { tick(); accumulator -= step; }
@@ -327,11 +337,14 @@ function tick() {
   updateUI();
 }
 
-// ===== AI 蛇(360° 连续游动) =====
+// ===== AI 蛇(360° 连续游动 · 前瞻模拟决策) =====
 const normAngle = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
 const angleDiff = (a, b) => normAngle(a - b);
 const dist2 = (dx, dy) => dx * dx + dy * dy;
-// 沿角度 a 探测前方畅通距离(碰墙/玩家蛇/其他蛇身体即返回)
+const BOT_STEER_OFFSETS = [0, .35, -.35, .75, -.75, 1.2, -1.2, 1.9, -1.9, 2.6, -2.6]; // 候选目标航向(几乎覆盖后半圆)
+const BOT_GROW_CAP = 46; // AI 蛇身体节数上限(约 23 格,保持比成长后的玩家短)
+
+// 沿角度 a 探测前方畅通距离(碰墙/玩家蛇/其他蛇身体即返回),护盾急转时快速判断哪侧更开阔
 function rayClear(h, a, bot) {
   const dx = Math.cos(a), dy = Math.sin(a);
   for (let d = .6; d <= 5.2; d += .6) {
@@ -345,23 +358,109 @@ function rayClear(h, a, bot) {
   }
   return 6;
 }
-// 决策目标航向:前方扇形 9 个候选角,安全优先、偏向食物、保留惯性
+
+// 收集前瞻范围内的硬障碍点(玩家蛇身 + 其他 AI 蛇身;本游戏自撞不死,忽略自身)
+function nearbyObstacles(bot, range) {
+  const h = bot.body[0], r2 = range * range, out = [];
+  for (const p of snake) { const dx = p.x - h.x, dy = p.y - h.y; if (dx * dx + dy * dy < r2) out.push(p); }
+  for (const o of bots) {
+    if (o === bot) continue;
+    for (const p of o.body) { const dx = p.x - h.x, dy = p.y - h.y; if (dx * dx + dy * dy < r2) out.push(p); }
+  }
+  return out;
+}
+
+// 收集威胁点:各蛇头沿当前航向的预测位置(有护盾的一方撞不死 AI,跳过不设威胁)
+function predictedDangers(bot) {
+  const out = [];
+  const push = (x, y) => { if (x > 1 && x < arena.w - 1 && y > 1 && y < arena.h - 1) out.push({ x, y }); };
+  if (playerShield <= 0) {
+    const ph = snake[0];
+    const pSpeed = boosting && !boostLock && energy > 0 ? difficultyConfig[difficulty].boost : .48; // 玩家加速时威胁延伸更远
+    push(ph.x + direction.x * pSpeed * 2, ph.y + direction.y * pSpeed * 2);
+    push(ph.x + direction.x * pSpeed * 4, ph.y + direction.y * pSpeed * 4);
+  }
+  for (const o of bots) {
+    if (o === bot || o.shield > 0) continue;
+    const b = o.body[0];
+    push(b.x + Math.cos(o.angle), b.y + Math.sin(o.angle));
+  }
+  return out;
+}
+
+// 目标选择:食物/残骸/截击点按"价值÷距离"择优,落在威胁圈附近的目标降权
+function chooseGoal(bot, dangers) {
+  const h = bot.body[0];
+  let best = null, bestScore = 0;
+  const consider = (x, y, value) => {
+    let s = value / (Math.hypot(x - h.x, y - h.y) + .001);
+    for (const g of dangers) { if (dist2(x - g.x, y - g.y) < 9) { s *= .45; break; } }
+    if (s > bestScore) { bestScore = s; best = { x, y }; }
+  };
+  for (const f of foods) consider(f.x, f.y, f.star ? 95 : 30); // 星星价值更高
+  for (const r of remains) consider(r.x, r.y, 16);              // 残骸次之,顺手扫食
+  // 高侵略性 AI 且玩家无护盾:预判玩家前进路线,把身体横在玩家前方(截击)
+  if (bot.aggro > .7 && playerShield <= 0 && difficultyConfig[difficulty].iq >= 1) {
+    const ph = snake[0], cx = ph.x + direction.x * 5, cy = ph.y + direction.y * 5;
+    if (dist2(cx - h.x, cy - h.y) < 100) consider(cx, cy, 55);
+  }
+  return best;
+}
+
+// 前瞻模拟:按实际转向速率画弧线前进(而非直线射线),返回能存活的步数,轨迹写入 path 复用
+function simulateBotPath(bot, targetAngle, obstacles, path) {
+  const h = bot.body[0];
+  let x = h.x, y = h.y, a = bot.angle, alive = 0;
+  for (let i = 0; i < path.length; i++) {
+    a = normAngle(a + clamp(angleDiff(targetAngle, a), -BOT_TURN_RATE, BOT_TURN_RATE));
+    x += Math.cos(a) * BOT_SPEED;
+    y += Math.sin(a) * BOT_SPEED;
+    if (x < .62 || x > arena.w - .62 || y < .62 || y > arena.h - .62) break;
+    let hit = false;
+    for (const p of obstacles) { const dx = x - p.x, dy = y - p.y; if (dx * dx + dy * dy < .37) { hit = true; break; } } // 碰撞半径略放大留安全余量
+    if (hit) break;
+    path[i].x = x; path[i].y = y; alive++;
+  }
+  return alive;
+}
+
+// 决策主逻辑:对每个候选航向做前瞻模拟,综合"存活 + 威胁规避 + 目标接近 + 惯性"打分
 function botSteer(bot) {
   const h = bot.body[0];
-  const offsets = [0, .4, -.4, .8, -.8, 1.3, -1.3, 2.2, -2.2];
-  let target = null, bestD = 1e9;
-  for (const f of foods) { const d = dist2(f.x - h.x, f.y - h.y); if (d < bestD) { bestD = d; target = f; } }
-  let best = bot.angle, bestScore = -1e9;
-  for (const o of offsets) {
+  const iq = difficultyConfig[difficulty].iq;
+  const look = clamp(Math.round(9 * iq), 5, 12);        // 难度越高看得越远
+  const obstacles = nearbyObstacles(bot, look * BOT_SPEED + 4);
+  const dangers = predictedDangers(bot);
+  const goal = chooseGoal(bot, dangers);
+  const path = Array.from({ length: look }, () => ({ x: 0, y: 0 }));
+  let best = bot.angle, bestAlive = 0, bestScore = -1e9;
+  for (const o of BOT_STEER_OFFSETS) {
     const a = normAngle(bot.angle + o);
-    const clear = rayClear(h, a, bot);
-    if (clear < 1.2) continue; // 近距障碍直接排除
-    let s = clear * 1.6;
-    if (target) s -= Math.abs(angleDiff(Math.atan2(target.y - h.y, target.x - h.x), a)) * 1.3;
-    s -= Math.abs(o) * .12;
-    if (s > bestScore) { bestScore = s; best = a; }
+    const alive = simulateBotPath(bot, a, obstacles, path);
+    if (!alive) continue;
+    let s = alive * alive * .3 - (look - alive) * 3.5;   // 生存永远第一:早死一步重罚
+    s -= Math.abs(o) * bot.inertia;                     // 少转弯,保持游动惯性
+    for (let i = 0; i < alive; i++) {                   // 轨迹越早贴近预测蛇头,罚分越重
+      for (const g of dangers) {
+        const q = 6.25 - dist2(path[i].x - g.x, path[i].y - g.y); // 半径 2.5 的威胁圈
+        if (q > 0) s -= q * (1 - i / look) * .35 * bot.caution * iq;
+      }
+    }
+    if (goal) {                                         // 靠近目标加分(距离封顶防近距离爆分)
+      const d0 = Math.max(Math.hypot(goal.x - h.x, goal.y - h.y), 2);
+      const d1 = Math.max(Math.hypot(goal.x - path[alive - 1].x, goal.y - path[alive - 1].y), 2);
+      s += (1 / d1 - 1 / d0) * 40 * bot.greed * (.55 + .45 * iq);
+    }
+    s += (Math.random() - .5) * (1.8 - iq);             // 低难度 AI 会"手抖"
+    if (s > bestScore) { bestScore = s; best = a; bestAlive = alive; }
   }
-  if (bestScore === -1e9) best = normAngle(bot.angle + Math.PI * (.6 + Math.random() * .8)); // 四面楚歌,掉头逃生
+  if (bestAlive < 3) {                                  // 陷入重围:全周扫描选活路最长的方向(替代随机掉头)
+    for (let k = 1; k <= 14; k++) {
+      const a = normAngle(bot.angle + (k / 14) * Math.PI * 2);
+      const alive = simulateBotPath(bot, a, obstacles, path);
+      if (alive > bestAlive) { bestAlive = alive; best = a; }
+    }
+  }
   bot.targetAngle = best;
 }
 // AI 蛇死亡:化为尸体残留,若死于玩家则计一次击杀
@@ -378,7 +477,7 @@ function killBot(bot, byPlayer, text = '击杀!') {
   }
 }
 function moveBot(bot) {
-  if (bot.steerCd-- <= 0) { botSteer(bot); bot.steerCd = 2 + Math.floor(Math.random() * 3); }
+  if (bot.steerCd-- <= 0) { botSteer(bot); bot.steerCd = 1 + Math.floor(Math.random() * 2); }
   // 平滑转向:每步最多转 BOT_TURN_RATE 弧度,形成弧线游动
   const diff = angleDiff(bot.targetAngle, bot.angle);
   bot.angle = normAngle(bot.angle + clamp(diff, -BOT_TURN_RATE, BOT_TURN_RATE));
@@ -391,15 +490,40 @@ function moveBot(bot) {
   if (hitWall || hitPlayer || hitBot) {
     // 碰撞规则:任一方有护盾则相安无事;双方都无护盾时,撞击方(AI)死亡、被撞方存活
     const harmless = bot.shield > 0 || (!hitWall && ((hitPlayer && playerShield > 0) || (hitBot && hitBot.shield > 0)));
-    if (harmless) { // 护盾:原地急转绕行,双方相安无事
+    if (harmless) { // 护盾:朝更开阔的一侧急转绕行,双方相安无事(随机转向容易转进墙)
       bot.steerCd = 0;
-      bot.targetAngle = normAngle(bot.angle + (Math.random() < .5 ? 1 : -1) * (1.2 + Math.random()));
+      const left = rayClear(h, bot.angle - 1.5, bot);
+      const right = rayClear(h, bot.angle + 1.5, bot);
+      bot.targetAngle = normAngle(bot.angle + (left >= right ? -1 : 1) * (1.1 + Math.random() * .5));
       return;
     }
     killBot(bot, hitPlayer); // 无护盾对撞:AI 死亡变尸体,撞玩家蛇身则计一次击杀
     return;
   }
-  bot.body.unshift(n); bot.body.pop();
+  bot.body.unshift(n);
+  // 进食:与玩家争夺场上食物
+  for (let i = foods.length - 1; i >= 0; i--) {
+    const f = foods[i];
+    if (dist2(n.x - f.x, n.y - f.y) < .4) {
+      foods.splice(i, 1); foods.push(makeFood());
+      bot.score += f.star ? 35 : 10;
+      bot.growth = Math.min(bot.growth + (f.star ? 4 : 1), 12);
+      burst(f.x, f.y, bot.color, 6);
+    }
+  }
+  // 吞食残骸(击杀后的战利品争夺)
+  remains = remains.filter((part) => {
+    if (dist2(n.x - part.x, n.y - part.y) < .4) {
+      bot.score += 4;
+      bot.growth = Math.min(bot.growth + 1, 12);
+      burst(part.x, part.y, bot.color, 4);
+      return false;
+    }
+    return true;
+  });
+  // 成长:有剩余成长值时保留尾节(身体变长),达到上限后不再生长
+  if (bot.growth > 0 && bot.body.length < BOT_GROW_CAP) bot.growth--;
+  else bot.body.pop();
 }
 
 // ===== 特效 =====
