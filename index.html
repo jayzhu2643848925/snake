@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#07101e" />
     <title>蛇域竞技场</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307101e'/%3E%3Ccircle cx='32' cy='30' r='15' fill='none' stroke='%2332e6d0' stroke-width='5' stroke-linecap='round' stroke-dasharray='70 25' transform='rotate(-45 32 30)'/%3E%3Ccircle cx='40' cy='39' r='4' fill='%23bdff4d'/%3E%3C/svg%3E" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -18,7 +19,13 @@
           <span>蛇域<span>竞技场</span></span>
         </a>
         <div class="game-status"><i></i><span id="statusText">竞技场已连接</span></div>
-        <button class="sound-button" id="soundButton" type="button" aria-label="切换音效">♪</button>
+        <div class="topbar-actions">
+          <button class="sound-button" id="soundButton" type="button" aria-label="切换音效">♪</button>
+          <button class="sound-button fullscreen-button" id="fullscreenButton" type="button" aria-label="全屏游戏" title="全屏游戏 (F)">
+            <svg class="icon-expand" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+            <svg class="icon-collapse" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>
+          </button>
+        </div>
       </header>
 
       <section class="game-layout">
@@ -31,7 +38,7 @@
             <div class="stat-card"><span>最高纪录</span><strong id="bestValue">0</strong></div>
           </div>
           <div class="divider"></div>
-          <div class="tip"><span class="tip-icon">✦</span><p>吃掉能量块来成长，避免撞上其他蛇的身体。</p></div>
+          <div class="tip"><span class="tip-icon">✦</span><p>蛇身可自由缠绕，但小心墙壁与其他蛇！</p></div>
         </aside>
 
         <section class="arena-wrap">
@@ -42,26 +49,33 @@
                 <span class="eyebrow">SNAKE ARENA</span>
                 <h1>蛇域竞技场</h1>
                 <p>在霓虹战场中生存、成长、称霸排行榜。</p>
+                <div class="result-stats hidden" id="resultStats"></div>
                 <div class="difficulty-picker" role="group" aria-label="选择游戏难度">
                   <button class="difficulty active" data-difficulty="easy" type="button">新手</button>
                   <button class="difficulty" data-difficulty="normal" type="button">标准</button>
                   <button class="difficulty" data-difficulty="hard" type="button">极限</button>
                 </div>
-                <button id="startButton" class="primary-button" type="button">开始战斗 <span>→</span></button>
-                <div class="key-hint"><span>拖动轮盘，360° 自由转向</span></div>
+                <button id="startButton" class="primary-button" type="button">开始战斗 <span class="arrow">→</span></button>
+                <div class="key-hint"><span>拖动轮盘，360° 自由转向 · F 键全屏</span></div>
               </div>
             </div>
             <div class="hud score-hud"><span>得分</span><strong id="scoreValue">0000</strong></div>
             <div class="hud kill-hud"><span>击败</span><strong id="killsValue">0</strong></div>
+            <div class="buff-bar" id="buffBar" aria-live="polite"></div>
             <div class="mini-map"><canvas id="miniMap" width="132" height="88"></canvas><span>雷达</span></div>
           </div>
-          <div class="wheel-controls" id="directionWheel" aria-label="360 度方向轮盘">
-            <span class="wheel-label">360° 控制</span>
-            <i class="wheel-axis axis-x"></i><i class="wheel-axis axis-y"></i>
-            <span class="wheel-knob" aria-hidden="true"></span>
-            <button class="wheel-center" type="button" aria-label="暂停或继续">Ⅱ</button>
+          <div class="arena-controls">
+            <div class="wheel-controls" id="directionWheel" aria-label="360 度方向轮盘">
+              <span class="wheel-label">360° 控制</span>
+              <i class="wheel-axis axis-x"></i><i class="wheel-axis axis-y"></i>
+              <span class="wheel-knob" aria-hidden="true"></span>
+              <button class="wheel-center" type="button" aria-label="暂停或继续">Ⅱ</button>
+            </div>
+            <div class="boost-group">
+              <button class="boost-button" id="boostButton" type="button" aria-label="按住加速">⚡ 按住加速</button>
+              <div class="energy-meter" title="加速能量"><i id="energyFill"></i></div>
+            </div>
           </div>
-          <button class="boost-button" id="boostButton" type="button" aria-label="按住加速">⚡ 按住加速</button>
         </section>
 
         <aside class="sidebar right-panel">
@@ -70,6 +84,7 @@
           <div class="control-row"><span class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></span><span>移动蛇头</span></div>
           <div class="control-row"><span class="keys"><kbd>Shift</kbd></span><span>按住加速移动</span></div>
           <div class="control-row"><span class="keys"><kbd>Space</kbd></span><span>暂停游戏</span></div>
+          <div class="control-row"><span class="keys"><kbd>F</kbd></span><span>全屏 / 退出全屏</span></div>
           <div class="divider"></div>
           <div class="challenge">
             <span class="eyebrow">今日挑战</span>
