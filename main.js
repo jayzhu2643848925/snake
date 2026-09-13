@@ -15,6 +15,7 @@ const ui = {
 // ===== 常量配置 =====
 const W = canvas.width, H = canvas.height, cell = 16;
 const arena = { w: 60, h: 40 };
+const CAM_ZOOM = 2; // 玩家视角:镜头缩放(视野为战场的 1/CAM_ZOOM,不再是上帝俯瞰)
 const BOT_SPEED = .5, BOT_TURN_RATE = .3; // AI 蛇每步前进距离 / 最大转向角(弧度)
 const BOT_NAMES = ['RIFT', 'NOVA', 'PIXEL', 'ECHO', 'GHOST', 'VIPER', 'ONYX', 'ZETA', 'BYTE', 'QUARK', 'BLITZ', 'FANG', 'HYDRA', 'WRAITH'];
 const BOT_COLORS = ['#ffbb4e', '#f474cc', '#9a7bff', '#4bc7ff', '#ff785c', '#7cf07c'];
@@ -40,6 +41,7 @@ let shieldTouchCd = 0; // 护盾碰撞提示冷却(ms),穿身时限频防刷屏
 let botSpawnTimer = 0, nextBotSpawn = 2500, powerUpTimer = 0;
 let countdown = 0, lastCount = 0, goFlash = 0;
 let shake = 0, deathFlash = 0, elapsed = 0, deathToken = 0;
+let cam = { x: 0, y: 0 }; // 玩家视角镜头中心(世界像素坐标,平滑跟随蛇头并朝前进方向前探)
 
 // ===== 工具函数 =====
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
@@ -126,6 +128,7 @@ function reset() {
   direction = nextDirection = { x: Math.cos(spawn.angle), y: Math.sin(spawn.angle) };
   snake = Array.from({ length: 22 }, (_, i) => ({ x: spawn.x - direction.x * .36 * i, y: spawn.y - direction.y * .36 * i }));
   elapsed = 0; shake = 0; deathFlash = 0;
+  cam.x = spawn.x * cell; cam.y = spawn.y * cell; // 镜头对准出生点
   updateUI(); setKnob(direction);
 }
 function start() {
@@ -697,6 +700,16 @@ function draw(time) {
   ctx.fillStyle = '#06111e'; ctx.fillRect(0, 0, W, H);
   ctx.save();
   if (shake > .3) { ctx.translate((Math.random() - .5) * shake, (Math.random() - .5) * shake); shake *= .9; } else shake = 0;
+  // 玩家视角镜头:平滑跟随蛇头,朝前进方向前探 4 格,视野钳制在战场内(不出界)
+  const lead = 4 * cell;
+  const vw = W / (2 * CAM_ZOOM), vh = H / (2 * CAM_ZOOM); // 视野半宽/半高(世界像素)
+  const tx = clamp(snake[0].x * cell + direction.x * lead, vw, W - vw);
+  const ty = clamp(snake[0].y * cell + direction.y * lead, vh, H - vh);
+  cam.x = lerp(cam.x, tx, .08);
+  cam.y = lerp(cam.y, ty, .08);
+  ctx.translate(W / 2, H / 2);
+  ctx.scale(CAM_ZOOM, CAM_ZOOM);
+  ctx.translate(-cam.x, -cam.y);
   drawGrid();
   foods.forEach((f) => drawFood(f, time));
   powerUps.forEach((item) => drawPowerUp(item, time));
@@ -920,10 +933,10 @@ function drawPopups() {
   popups.forEach((p) => {
     const t = 1 - p.life / p.max;
     ctx.globalAlpha = Math.min(1, p.life / 300);
-    ctx.font = `700 ${p.size}px 'Barlow Condensed',sans-serif`;
+    ctx.font = `700 ${p.size / CAM_ZOOM}px 'Barlow Condensed',sans-serif`; // 反向缩放:镜头放大后文字保持原视觉大小
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(4,12,20,.8)';
-    const x = p.x * cell, y = p.y * cell - 14 - t * 26;
+    ctx.lineWidth = 3 / CAM_ZOOM; ctx.strokeStyle = 'rgba(4,12,20,.8)';
+    const x = p.x * cell, y = p.y * cell - (14 + t * 26) / CAM_ZOOM;
     ctx.strokeText(p.text, x, y);
     ctx.fillStyle = p.color; ctx.fillText(p.text, x, y);
   });
@@ -1094,4 +1107,5 @@ Object.defineProperty(window, '__snake', { value: {
   get foods() { return foods; }, get bots() { return bots; }, get powerUps() { return powerUps; }, get remains() { return remains; },
   get stars() { return foods.filter((f) => f.star); },
   get player() { return { len: snake.length, score, shield: playerShield, head: [snake[0].x, snake[0].y] }; },
+  get cam() { return { x: cam.x, y: cam.y, zoom: CAM_ZOOM }; },
 }});
