@@ -30,7 +30,7 @@
 
       <section class="game-layout">
         <aside class="sidebar left-panel">
-          <div class="panel-heading"><span>战场情报</span><b>LIVE</b></div>
+          <div class="panel-heading"><span>战场情报</span><b id="difficultyBadge">新手</b></div>
           <div class="rank-list" id="rankList"></div>
           <div class="divider"></div>
           <div class="stat-grid">
@@ -38,19 +38,13 @@
             <div class="stat-card"><span>最高纪录</span><strong id="bestValue">0</strong></div>
           </div>
           <div class="divider"></div>
-          <div class="brain-panel">
-            <div class="panel-heading"><span>AI 神经网络</span><b id="brainState">学习中</b></div>
-            <canvas id="brainSpark" width="182" height="40" aria-label="AI 适应度曲线"></canvas>
-            <div class="brain-stats">
-              <div><span>训练决策</span><strong id="brainSteps">0</strong></div>
-              <div><span>平均适应度</span><strong id="brainFitness">--</strong></div>
-              <div><span>探索率 ε</span><strong id="brainEpsilon">30%</strong></div>
-              <div><span>主策略</span><strong id="brainFactor">生存</strong></div>
-            </div>
-            <button class="brain-reset" id="brainReset" type="button">清除 AI 学习记忆</button>
+          <div class="challenge">
+            <span class="eyebrow">今日挑战</span>
+            <h3>战场幸存者</h3>
+            <p>达到长度 30</p>
+            <div class="progress"><i id="challengeProgress"></i></div>
+            <small id="challengeText">5 / 30</small>
           </div>
-          <div class="divider"></div>
-          <div class="tip"><span class="tip-icon">✦</span><p>AI 蛇会抢夺食物并伺机截击，绕后突袭可反杀！</p></div>
         </aside>
 
         <section class="arena-wrap">
@@ -74,38 +68,15 @@
             <div class="hud score-hud"><span>得分</span><strong id="scoreValue">0000</strong></div>
             <div class="hud kill-hud"><span>击败</span><strong id="killsValue">0</strong></div>
             <div class="buff-bar" id="buffBar" aria-live="polite"></div>
-            <div class="mini-map"><canvas id="miniMap" width="132" height="88"></canvas><span>雷达</span></div>
-          </div>
-          <div class="arena-controls">
             <div class="wheel-controls" id="directionWheel" aria-label="360 度方向轮盘">
               <span class="wheel-label">360° 控制</span>
               <i class="wheel-axis axis-x"></i><i class="wheel-axis axis-y"></i>
               <span class="wheel-knob" aria-hidden="true"></span>
               <button class="wheel-center" type="button" aria-label="暂停或继续">Ⅱ</button>
             </div>
-            <div class="boost-group">
-              <button class="boost-button" id="boostButton" type="button" aria-label="按住加速">⚡ 按住加速</button>
-              <div class="energy-meter" title="加速能量"><i id="energyFill"></i></div>
-            </div>
+            <div class="mini-map"><canvas id="miniMap" width="132" height="88"></canvas></div>
           </div>
         </section>
-
-        <aside class="sidebar right-panel">
-          <div class="panel-heading"><span>操作指南</span><b id="difficultyBadge">新手</b></div>
-          <div class="control-row"><span class="keys"><kbd>◉</kbd></span><span>轮盘控制方向</span></div>
-          <div class="control-row"><span class="keys"><kbd>↑</kbd><kbd>←</kbd><kbd>↓</kbd><kbd>→</kbd></span><span>移动蛇头</span></div>
-          <div class="control-row"><span class="keys"><kbd>Shift</kbd></span><span>按住加速移动</span></div>
-          <div class="control-row"><span class="keys"><kbd>Space</kbd></span><span>暂停游戏</span></div>
-          <div class="control-row"><span class="keys"><kbd>F</kbd></span><span>全屏 / 退出全屏</span></div>
-          <div class="divider"></div>
-          <div class="challenge">
-            <span class="eyebrow">今日挑战</span>
-            <h3>战场幸存者</h3>
-            <p>达到长度 30</p>
-            <div class="progress"><i id="challengeProgress"></i></div>
-            <small id="challengeText">5 / 30</small>
-          </div>
-        </aside>
       </section>
 
       <footer><span>© 2026 SNAKE ARENA</span><span>独自闯入 · 即刻开战</span></footer>

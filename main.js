@@ -7,13 +7,9 @@ const ui = {
   length: $('#lengthValue'), kills: $('#killsValue'), best: $('#bestValue'),
   rank: $('#rankList'), progress: $('#challengeProgress'), challenge: $('#challengeText'),
   status: $('#statusText'), sound: $('#soundButton'), wheel: $('#directionWheel'),
-  knob: $('.wheel-knob'), boost: $('#boostButton'), difficultyBadge: $('#difficultyBadge'),
-  energyFill: $('#energyFill'), energyMeter: $('.energy-meter'),
+  knob: $('.wheel-knob'), difficultyBadge: $('#difficultyBadge'),
   buffBar: $('#buffBar'), resultStats: $('#resultStats'),
   fullscreen: $('#fullscreenButton'),
-  brainSteps: $('#brainSteps'), brainFitness: $('#brainFitness'), brainEpsilon: $('#brainEpsilon'),
-  brainFactor: $('#brainFactor'), brainState: $('#brainState'),
-  brainSpark: $('#brainSpark'), brainReset: $('#brainReset'),
 };
 
 // ===== 常量配置 =====
@@ -29,7 +25,6 @@ const difficultyConfig = { // iq:AI 智能系数(影响前瞻距离/威胁敏感
 };
 const COMBO_WINDOW = 2400;                                    // 连击判定窗口(ms)
 const REPLAY_ICON = '<svg class="btn-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/></svg>'; // 再来一局按钮的重玩图标
-const ENERGY_MAX = 100, ENERGY_DRAIN = 30, ENERGY_REGEN = 11, ENERGY_UNLOCK = 18;
 const HEAD_RGB = [212, 255, 96], TAIL_RGB = [16, 150, 148];   // 蛇身头尾渐变色
 
 // ===== 运行状态 =====
@@ -39,7 +34,6 @@ let score = 0, kills = 0, best = Number(localStorage.snakeArenaBest || 0);
 let difficulty = 'easy';
 let snake, bots, foods, remains, powerUps, sparks, popups;
 let direction, nextDirection;
-let boosting = false, boostLock = false, energy = ENERGY_MAX;
 let combo = 0, comboTimer = 0, maxCombo = 0, foodsEaten = 0, starsEaten = 0;
 let magnetTimer = 0, playerShield = 0, shieldTotal = 1; // shieldTotal:当前护盾总时长(用于进度条)
 let shieldTouchCd = 0; // 护盾碰撞提示冷却(ms),穿身时限频防刷屏
@@ -77,7 +71,8 @@ function beep(freq, duration, volume = .04, type = 'triangle', delay = 0) {
 // ===== 实体生成 =====
 function makeFood() {
   const star = Math.random() < .16;
-  return { x: 2 + Math.random() * 56, y: 2 + Math.random() * 36, hue: star ? 45 : Math.random() * 80 + 140, pulse: Math.random() * 6, star };
+  const angle = Math.random() * Math.PI * 2, drift = star ? .001 + Math.random() * .0015 : 0; // 星星漂移速度与道具完全一致(每 ms 位移,约 1~2.5 格/秒)
+  return { x: 2 + Math.random() * 56, y: 2 + Math.random() * 36, hue: star ? 45 : Math.random() * 80 + 140, pulse: Math.random() * 6, star, dx: Math.cos(angle) * drift, dy: Math.sin(angle) * drift };
 }
 function makeBot(name, color, x, y, angle) {
   const body = [];
@@ -85,7 +80,9 @@ function makeBot(name, color, x, y, angle) {
   for (let i = 0; i < segs; i++) body.push({ x: x - Math.cos(angle) * BOT_SPEED * i, y: y - Math.sin(angle) * BOT_SPEED * i });
   return {
     name, color, body, angle, targetAngle: angle, steerCd: 0,
-    score: body.length * 7, shield: 5000, growth: 0,
+    score: body.length * 7, shield: 5000, growth: 0, speed: BOT_SPEED, // speed:当前游速(决策层动态调整)
+    baseLen: body.length, baseScore: body.length * 7,   // 成长基准:出生节数/出生分(分数成长按差值计算)
+    burn: 0,                                           // 高速燃烧的蛇身节数(单向累积)
     greed: .75 + Math.random() * .5,    // 性格:贪食度(食物吸引权重)
     caution: .75 + Math.random() * .55, // 性格:谨慎度(威胁规避权重)
     inertia: .1 + Math.random() * .09,  // 性格:惯性(转向代价)
@@ -103,7 +100,7 @@ function spawnBot() {
   burst(x, y, '#7defff');
 }
 function spawnPowerUp() {
-  const type = Math.random() < .5 ? 'magnet' : 'shield', angle = Math.random() * Math.PI * 2, speed = .025 + Math.random() * .03;
+  const type = Math.random() < .5 ? 'magnet' : 'shield', angle = Math.random() * Math.PI * 2, speed = .001 + Math.random() * .0015; // 漂移减速:约 1~2.5 格/秒,缓慢游动
   powerUps.push({ type, x: 4 + Math.random() * 52, y: 4 + Math.random() * 32, dx: Math.cos(angle) * speed, dy: Math.sin(angle) * speed, life: 7000 + Math.random() * 6000, pulse: Math.random() * 6 });
 }
 
@@ -122,7 +119,6 @@ function reset() {
   score = 0; kills = 0; sparks = []; popups = []; remains = []; powerUps = [];
   powerUpTimer = 0; magnetTimer = 0; playerShield = 0; shieldTotal = 1; shieldTouchCd = 0;
   combo = 0; comboTimer = 0; maxCombo = 0; foodsEaten = 0; starsEaten = 0;
-  energy = ENERGY_MAX; boostLock = false; setBoost(false);
   foods = Array.from({ length: 35 }, makeFood);
   bots = [];
   for (let i = 0; i < config.bots; i++) spawnBot();
@@ -134,6 +130,7 @@ function reset() {
 }
 function start() {
   audio(); // 在用户手势内解锁音频
+  ensureFullscreen(); // 点击开始/再来一局时自动进入全屏(用户手势内请求,已全屏则跳过)
   reset();
   ui.resultStats.classList.add('hidden');
   ui.start.classList.remove('again');
@@ -219,22 +216,21 @@ function loop(now) {
       bots.forEach((bot) => (bot.shield = Math.max(0, bot.shield - delta)));
       comboTimer = Math.max(0, comboTimer - delta);
       if (!comboTimer) combo = 0;
-      // 加速能量
-      const burning = boosting && !boostLock && energy > 0;
-      if (burning) {
-        energy = Math.max(0, energy - (ENERGY_DRAIN * delta) / 1000);
-        if (energy <= 0) boostLock = true;
-      } else {
-        energy = Math.min(ENERGY_MAX, energy + (ENERGY_REGEN * delta) / 1000);
-        if (boostLock && energy > ENERGY_UNLOCK) boostLock = false;
-      }
-      // 道具漂移
+      // 道具漂移 + 星星漂移(与道具同速同基准,碰壁反弹;普通食物静止)
       powerUps = powerUps.filter((item) => {
         item.life -= delta; item.x += item.dx * delta; item.y += item.dy * delta;
         if (item.x < 2 || item.x > 58) item.dx *= -1;
         if (item.y < 2 || item.y > 38) item.dy *= -1;
         return item.life > 0;
       });
+      // 星星漂移(与道具同速同基准,碰壁反弹;普通食物静止);磁力激活期间暂停漂移——半径外保持不动,磁力结束后恢复
+      if (!magnetTimer) for (const f of foods) {
+        if (!f.star) continue;
+        f.x += f.dx * delta; f.y += f.dy * delta;
+        if (f.x < 1.5 || f.x > arena.w - 1.5) f.dx *= -1;
+        if (f.y < 1.5 || f.y > arena.h - 1.5) f.dy *= -1;
+        f.x = clamp(f.x, 1.5, arena.w - 1.5); f.y = clamp(f.y, 1.5, arena.h - 1.5);
+      }
       if (botSpawnTimer > nextBotSpawn) {
         botSpawnTimer = 0; nextBotSpawn = 1800 + Math.random() * 3200;
         if (bots.length < difficultyConfig[difficulty].maxBots) spawnBot(); // AI 变聪明后存活更久,限制场上数量
@@ -252,8 +248,7 @@ function loop(now) {
 function tick() {
   if (!running) return;
   direction = nextDirection;
-  const burning = boosting && !boostLock && energy > 0;
-  const speed = burning ? difficultyConfig[difficulty].boost : .48;
+  const speed = .48;
   const head = { x: snake[0].x + direction.x * speed, y: snake[0].y + direction.y * speed };
 
   // 碰撞判定(自身可缠绕,自撞不死)
@@ -262,21 +257,14 @@ function tick() {
   for (const bot of bots) {
     if (bot.body.some((p) => dist(head, p) < .66)) { hitBot = bot; break; }
   }
-  // 碰撞规则:撞到 AI 蛇时任一方有护盾则相安无事;双方都无护盾时,撞击方(玩家)死亡、被撞的 AI 蛇存活
+  // 碰撞规则:撞墙必死(护盾无效);撞到 AI 蛇时任一方有护盾则相安无事穿过
   const harmless = !!hitBot && (playerShield > 0 || hitBot.shield > 0);
-  if (hitBot && !harmless) { gameOver(); return; }           // 蛇头对撞也不再同归于尽,只有玩家死
-  if (hitWall && playerShield <= 0) { gameOver(); return; }  // 无护盾撞墙即死
-  if (harmless && shieldTouchCd <= 0) {                      // 护盾抵挡提示(限频防刷屏)
-    popup(head.x, head.y, '护盾抵挡!', '#79f3ff', 11);
+  if (hitBot && !harmless) { gameOver(); return; }           // 无护盾撞 AI 蛇:玩家死亡
+  if (hitWall) { gameOver(); return; }                       // 撞墙必死,护盾也无法幸免
+  if (harmless && shieldTouchCd <= 0) {                      // 护盾碰撞提示(限频防刷屏):双方无伤自然穿过
+    popup(head.x, head.y, '护盾穿身!', '#79f3ff', 11);
     beep(320, .06, .035);
     shieldTouchCd = 700;
-  }
-  if (hitWall && playerShield) { // 护盾状态下撞墙反弹,避免穿出边界
-    if (head.x < .45 || head.x > arena.w - .45) { direction = nextDirection = { x: -direction.x, y: direction.y }; head.x = clamp(head.x, .46, arena.w - .46); }
-    if (head.y < .45 || head.y > arena.h - .45) { direction = nextDirection = { x: direction.x, y: -direction.y }; head.y = clamp(head.y, .46, arena.h - .46); }
-    setKnob(direction);
-    popup(head.x, head.y, '弹开!', '#79f3ff', 11);
-    beep(300, .08, .04);
   }
 
   // 道具拾取
@@ -296,11 +284,18 @@ function tick() {
   snake.unshift(head);
   let growth = 0;
 
-  // 磁力吸引食物
-  if (magnetTimer) foods.forEach((f) => {
-    const dx = head.x - f.x, dy = head.y - f.y, d = Math.hypot(dx, dy);
-    if (d < 7 && d > .1) { f.x += (dx / d) * .22; f.y += (dy / d) * .22; }
-  });
+  // 磁力吸引:半径 7 格内的食物与残骸被拉向玩家;半径外完全静止
+  // 磁力期间星星漂移暂停(见 loop 中 magnetTimer 判断),半径外保持不动、半径内仅受磁力;护盾/磁铁道具不受磁场影响
+  if (magnetTimer) {
+    for (const f of foods) {
+      const dx = head.x - f.x, dy = head.y - f.y, d = Math.hypot(dx, dy);
+      if (d < 7 && d > .1) { f.x += (dx / d) * .28; f.y += (dy / d) * .28; } // 半径内:统一拉力吸入
+    }
+    remains.forEach((p) => {
+      const dx = head.x - p.x, dy = head.y - p.y, d = Math.hypot(dx, dy);
+      if (d < 7 && d > .1) { p.x += (dx / d) * .18; p.y += (dy / d) * .18; }
+    });
+  }
 
   // 进食:连击加成
   for (let i = foods.length - 1; i >= 0; i--) {
@@ -326,16 +321,6 @@ function tick() {
     return true;
   });
 
-  // 加速尾焰
-  if (burning) for (let i = 0; i < 2; i++) {
-    sparks.push({
-      x: head.x, y: head.y,
-      vx: (Math.random() - .5) * .05 - direction.x * .06,
-      vy: (Math.random() - .5) * .05 - direction.y * .06,
-      life: 420, max: 420, color: Math.random() < .5 ? '#ffd87a' : '#7defff',
-    });
-  }
-
   const targetLength = 22 + (score / 10) * 3 + growth;
   while (snake.length > targetLength) snake.pop();
   bots.forEach(moveBot);
@@ -347,7 +332,8 @@ const normAngle = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Mat
 const angleDiff = (a, b) => normAngle(a - b);
 const dist2 = (dx, dy) => dx * dx + dy * dy;
 const BOT_STEER_OFFSETS = [0, .35, -.35, .75, -.75, 1.2, -1.2, 1.9, -1.9, 2.6, -2.6]; // 候选目标航向(几乎覆盖后半圆)
-const BOT_GROW_CAP = 46; // AI 蛇身体节数上限(约 23 格,保持比成长后的玩家短)
+const BOT_GROW_CAP = 56; // AI 蛇身体节数上限(约 28 格,与成长后的玩家相当)
+const BOT_MIN_LEN = 12; // 高速燃烧后的最短保留节数
 
 // ===== 强化学习大脑(全体 AI 蛇共享的"蜂群思维") =====
 // 架构:线性 Q 函数 V(a)=w·f(a),f 为候选航向的 6 维特征(与 DQN 同源,用线性层换浏览器实时性)
@@ -419,21 +405,6 @@ const brain = {
 };
 brain.load();
 
-// 沿角度 a 探测前方畅通距离(碰墙/玩家蛇/其他蛇身体即返回),护盾急转时快速判断哪侧更开阔
-function rayClear(h, a, bot) {
-  const dx = Math.cos(a), dy = Math.sin(a);
-  for (let d = .6; d <= 5.2; d += .6) {
-    const x = h.x + dx * d, y = h.y + dy * d;
-    if (x < .7 || x > arena.w - .7 || y < .7 || y > arena.h - .7) return d;
-    if (snake.some((p) => dist2(x - p.x, y - p.y) < .36)) return d;
-    for (const o of bots) {
-      if (o === bot) continue;
-      if (o.body.some((p) => dist2(x - p.x, y - p.y) < .3)) return d;
-    }
-  }
-  return 6;
-}
-
 // 收集前瞻范围内的硬障碍点(玩家蛇身 + 其他 AI 蛇身;本游戏自撞不死,忽略自身)
 function nearbyObstacles(bot, range) {
   const h = bot.body[0], r2 = range * range, out = [];
@@ -451,7 +422,7 @@ function predictedDangers(bot) {
   const push = (x, y) => { if (x > 1 && x < arena.w - 1 && y > 1 && y < arena.h - 1) out.push({ x, y }); };
   if (playerShield <= 0) {
     const ph = snake[0];
-    const pSpeed = boosting && !boostLock && energy > 0 ? difficultyConfig[difficulty].boost : .48; // 玩家加速时威胁延伸更远
+    const pSpeed = .48; // 玩家恒速
     push(ph.x + direction.x * pSpeed * 2, ph.y + direction.y * pSpeed * 2);
     push(ph.x + direction.x * pSpeed * 4, ph.y + direction.y * pSpeed * 4);
   }
@@ -482,14 +453,14 @@ function chooseGoal(bot, dangers) {
   return best;
 }
 
-// 前瞻模拟:按实际转向速率画弧线前进(而非直线射线),返回能存活的步数,轨迹写入 path 复用
+// 前瞻模拟:按实际转向速率和当前游速画弧线前进(而非直线射线),返回能存活的步数,轨迹写入 path 复用
 function simulateBotPath(bot, targetAngle, obstacles, path) {
   const h = bot.body[0];
   let x = h.x, y = h.y, a = bot.angle, alive = 0;
   for (let i = 0; i < path.length; i++) {
     a = normAngle(a + clamp(angleDiff(targetAngle, a), -BOT_TURN_RATE, BOT_TURN_RATE));
-    x += Math.cos(a) * BOT_SPEED;
-    y += Math.sin(a) * BOT_SPEED;
+    x += Math.cos(a) * bot.speed;
+    y += Math.sin(a) * bot.speed;
     if (x < .62 || x > arena.w - .62 || y < .62 || y > arena.h - .62) break;
     let hit = false;
     for (const p of obstacles) { const dx = x - p.x, dy = y - p.y; if (dx * dx + dy * dy < .37) { hit = true; break; } } // 碰撞半径略放大留安全余量
@@ -505,7 +476,7 @@ function botSteer(bot) {
   const h = bot.body[0];
   const iq = difficultyConfig[difficulty].iq;
   const look = clamp(Math.round(9 * iq), 5, 12);        // 难度越高看得越远
-  const obstacles = nearbyObstacles(bot, look * BOT_SPEED + 4);
+  const obstacles = nearbyObstacles(bot, look * bot.speed + 4);
   const dangers = predictedDangers(bot);
   const goal = chooseGoal(bot, dangers);
   const path = Array.from({ length: look }, () => ({ x: 0, y: 0 }));
@@ -533,9 +504,17 @@ function botSteer(bot) {
     const pick = brain.decide(cands, iq);
     bot.pendingExp = { f: pick.f, r: -.02 };            // 新决策开始累积奖励(含微小时间成本)
     bot.targetAngle = pick.a;
+    // 变速决策:威胁临身加速脱离,目标远时冲刺觅食,近距减速精确接近,平时巡航微波动
+    const threatened = dangers.some((g) => dist2(h.x - g.x, h.y - g.y) < 6.25);
+    let ts = BOT_SPEED * (.9 + Math.random() * .2);
+    if (threatened) ts = BOT_SPEED * 1.3;
+    else if (goal && gd > 6) ts = BOT_SPEED * 1.18;
+    else if (goal && gd < 2.5) ts = BOT_SPEED * .82;
+    bot.speed = lerp(bot.speed, ts, .35);
   } else {
-    // 陷入重围:全周扫描选活路最长的方向(纯求生,不经过大脑)
+    // 陷入重围:全周扫描选活路最长的方向(纯求生,不经过大脑),同时提速突围
     if (bot.pendingExp) { brain.update(bot.pendingExp.f, bot.pendingExp.r, 0); bot.pendingExp = null; }
+    bot.speed = lerp(bot.speed, BOT_SPEED * 1.25, .4);
     let best = bot.angle, bestAlive = 0;
     for (let k = 1; k <= 14; k++) {
       const a = normAngle(bot.angle + (k / 14) * Math.PI * 2);
@@ -570,33 +549,35 @@ function moveBot(bot) {
   const diff = angleDiff(bot.targetAngle, bot.angle);
   bot.angle = normAngle(bot.angle + clamp(diff, -BOT_TURN_RATE, BOT_TURN_RATE));
   const h = bot.body[0];
-  const n = { x: h.x + Math.cos(bot.angle) * BOT_SPEED, y: h.y + Math.sin(bot.angle) * BOT_SPEED };
+  const n = { x: h.x + Math.cos(bot.angle) * bot.speed, y: h.y + Math.sin(bot.angle) * bot.speed };
   const hitWall = n.x < .5 || n.x > arena.w - .5 || n.y < .5 || n.y > arena.h - .5;
   const hitPlayer = snake.some((p) => dist(n, p) < .6);
   let hitBot = null; // 撞到的其他 AI 蛇
   for (const o of bots) if (o !== bot && o.body.some((p) => dist(n, p) < .55)) { hitBot = o; break; }
-  if (hitWall || hitPlayer || hitBot) {
-    // 碰撞规则:任一方有护盾则相安无事;双方都无护盾时,撞击方(AI)死亡、被撞方存活
-    const harmless = bot.shield > 0 || (!hitWall && ((hitPlayer && playerShield > 0) || (hitBot && hitBot.shield > 0)));
-    if (harmless) { // 护盾:朝更开阔的一侧急转绕行,双方相安无事(随机转向容易转进墙)
-      bot.steerCd = 0;
-      const left = rayClear(h, bot.angle - 1.5, bot);
-      const right = rayClear(h, bot.angle + 1.5, bot);
-      bot.targetAngle = normAngle(bot.angle + (left >= right ? -1 : 1) * (1.1 + Math.random() * .5));
-      return;
-    }
-    killBot(bot, hitPlayer); // 无护盾对撞:AI 死亡变尸体,撞玩家蛇身则计一次击杀
+  if (hitWall) { killBot(bot, false); return; }              // 撞墙必死:护盾也无法幸免
+  if (hitPlayer || hitBot) {
+    // 蛇对蛇相撞:任一方有护盾则双方不死且自然穿过;双方都无护盾时撞击方(AI)死亡
+    const harmless = bot.shield > 0 || (hitPlayer && playerShield > 0) || (hitBot && hitBot.shield > 0);
+    if (harmless) { bot.body.unshift(n); bot.body.pop(); bot.lifeTicks++; return; } // 保持原速自然穿过,不停不转
+    killBot(bot, hitPlayer); // 撞玩家蛇身则计一次击杀
     return;
   }
   bot.body.unshift(n);
   bot.lifeTicks++;
-  // 进食:与玩家争夺场上食物(进食回报 +1/+1.5,喂给强化学习大脑)
+  // 高速游动尾焰(冲刺/逃逸时)
+  if (bot.speed > BOT_SPEED * 1.12) sparks.push({
+    x: h.x, y: h.y,
+    vx: (Math.random() - .5) * .04 - Math.cos(bot.angle) * .05,
+    vy: (Math.random() - .5) * .04 - Math.sin(bot.angle) * .05,
+    life: 340, max: 340, color: bot.color,
+  });
+  // 进食:与玩家争夺场上食物(进食回报 +1/+1.5,喂给强化学习大脑;成长与玩家同构:分数被动成长+当拍缓冲)
   for (let i = foods.length - 1; i >= 0; i--) {
     const f = foods[i];
     if (dist2(n.x - f.x, n.y - f.y) < .4) {
       foods.splice(i, 1); foods.push(makeFood());
       bot.score += f.star ? 35 : 10;
-      bot.growth = Math.min(bot.growth + (f.star ? 4 : 1), 12);
+      bot.growth += f.star ? 12 : 3;
       bot.foods++; brain.foods++;
       if (bot.pendingExp) bot.pendingExp.r += f.star ? 1.5 : 1;
       burst(f.x, f.y, bot.color, 6);
@@ -606,16 +587,18 @@ function moveBot(bot) {
   remains = remains.filter((part) => {
     if (dist2(n.x - part.x, n.y - part.y) < .4) {
       bot.score += 4;
-      bot.growth = Math.min(bot.growth + 1, 12);
+      bot.growth += 1;
       if (bot.pendingExp) bot.pendingExp.r += .4;
       burst(part.x, part.y, bot.color, 4);
       return false;
     }
     return true;
   });
-  // 成长:有剩余成长值时保留尾节(身体变长),达到上限后不再生长
-  if (bot.growth > 0 && bot.body.length < BOT_GROW_CAP) bot.growth--;
-  else bot.body.pop();
+  // 成长:与玩家同构——分数被动成长(相对出生分的差值)+进食当拍缓冲,高速燃烧换速度
+  if (bot.speed > BOT_SPEED * 1.12) bot.burn = Math.min(bot.burn + .06, 40);
+  const targetLen = Math.max(BOT_MIN_LEN, Math.min(bot.baseLen + ((bot.score - bot.baseScore) / 10) * 3 + bot.growth - bot.burn, BOT_GROW_CAP));
+  while (bot.body.length > targetLen) bot.body.pop();
+  bot.growth = 0; // 缓冲仅当拍有效(与玩家 growth 语义一致)
 }
 
 // ===== 特效 =====
@@ -635,6 +618,11 @@ function updateEffects(delta) {
 }
 
 // ===== UI 更新 =====
+// buff 图标:与场上道具同款的形象化 SVG(盾牌/马蹄磁铁)
+const BUFF_ICONS = {
+  shield: '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M12 2.2 20.2 5.4V11c0 5.4-3.4 9.4-8.2 11.1C7.2 20.4 3.8 16.4 3.8 11V5.4Z" fill="#79f3ff"/><path d="M12 2.2 20.2 5.4V11c0 5.4-3.4 9.4-8.2 11.1C7.2 20.4 3.8 16.4 3.8 11V5.4Z" fill="none" stroke="#e6fbff" stroke-width="1.4"/><path d="M12 6v9M8 10.5h8" stroke="#0a2a3d" stroke-width="1.6" stroke-linecap="round"/></svg>',
+  magnet: '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><path d="M5 5h4.4v9a2.6 2.6 0 0 0 5.2 0V5H19v9a7 7 0 0 1-14 0Z" fill="#ff8296"/><rect x="5" y="5" width="4.4" height="3.4" fill="#e9f5ff"/><rect x="14.6" y="5" width="4.4" height="3.4" fill="#e9f5ff"/><path d="M5 5h4.4v9a2.6 2.6 0 0 0 5.2 0V5H19v9a7 7 0 0 1-14 0Z" fill="none" stroke="#ffd6de" stroke-width="1.1"/></svg>',
+};
 // 适应度曲线:最近 50 条生命的适应度走势,学习效果可视化
 function drawBrainSpark() {
   const el = ui.brainSpark; if (!el) return;
@@ -670,8 +658,8 @@ function updateBrainUI() {
 function renderBuffs() {
   if (!playerShield && !magnetTimer) { ui.buffBar.innerHTML = ''; return; }
   let html = '';
-  if (playerShield > 0) html += `<div class="buff shield"><span>🛡</span><div class="buff-meter"><i style="width:${Math.round((playerShield / shieldTotal) * 100)}%"></i></div><b>${(playerShield / 1000).toFixed(1)}s</b></div>`;
-  if (magnetTimer > 0) html += `<div class="buff magnet"><span>🧲</span><div class="buff-meter"><i style="width:${Math.round((magnetTimer / 7000) * 100)}%"></i></div><b>${(magnetTimer / 1000).toFixed(1)}s</b></div>`;
+  if (playerShield > 0) html += `<div class="buff shield"><span>${BUFF_ICONS.shield}</span><div class="buff-meter"><i style="width:${Math.round((playerShield / shieldTotal) * 100)}%"></i></div><b>${(playerShield / 1000).toFixed(1)}s</b></div>`;
+  if (magnetTimer > 0) html += `<div class="buff magnet"><span>${BUFF_ICONS.magnet}</span><div class="buff-meter"><i style="width:${Math.round((magnetTimer / 7000) * 100)}%"></i></div><b>${(magnetTimer / 1000).toFixed(1)}s</b></div>`;
   ui.buffBar.innerHTML = html;
 }
 function updateUI() {
@@ -683,9 +671,6 @@ function updateUI() {
   const p = Math.min((length / 30) * 100, 100);
   ui.progress.style.width = p + '%';
   ui.challenge.textContent = `${length} / 30`;
-  ui.energyFill.style.width = energy + '%';
-  ui.energyMeter.classList.toggle('low', energy < 30);
-  ui.boost.classList.toggle('depleted', boostLock);
   renderBuffs();
   const entries = [
     ...bots.map((b) => ({ name: b.name, color: b.color, score: b.score })),
@@ -756,17 +741,48 @@ function drawPowerUp(item, time) {
   const color = item.type === 'magnet' ? '#ff687b' : '#79f3ff';
   ctx.save();
   ctx.translate(x, y + bob);
+  // 外层脉冲光环
   ctx.globalAlpha = .35 + Math.sin(time / 260 + item.pulse) * .15;
   ctx.strokeStyle = color; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(0, 0, 12, 0, 7); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, 0, 13, 0, 7); ctx.stroke();
   ctx.globalAlpha = 1;
-  ctx.shadowBlur = 20; ctx.shadowColor = color; ctx.fillStyle = color;
-  ctx.beginPath(); ctx.arc(0, 0, 8, 0, 7); ctx.fill();
-  ctx.shadowBlur = 0;
-  ctx.fillStyle = '#07111e';
-  ctx.font = "700 9px 'DM Sans',sans-serif";
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(item.type === 'magnet' ? '磁' : '盾', 0, .5);
+  ctx.shadowBlur = 18; ctx.shadowColor = color;
+  if (item.type === 'shield') {
+    // 盾牌图标:肩部弧线过渡、底部收尖的经典盾形,青色渐变 + 纹章十字
+    ctx.beginPath();
+    ctx.moveTo(0, -8.5);
+    ctx.quadraticCurveTo(7.5, -7.5, 7.5, -3);
+    ctx.lineTo(7.5, 1.5);
+    ctx.quadraticCurveTo(7.5, 6.5, 0, 9.5);
+    ctx.quadraticCurveTo(-7.5, 6.5, -7.5, 1.5);
+    ctx.lineTo(-7.5, -3);
+    ctx.quadraticCurveTo(-7.5, -7.5, 0, -8.5);
+    ctx.closePath();
+    const grad = ctx.createLinearGradient(0, -9, 0, 10);
+    grad.addColorStop(0, '#d9fbff'); grad.addColorStop(.55, '#79f3ff'); grad.addColorStop(1, '#1fa6d8');
+    ctx.fillStyle = grad; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(236,253,255,.95)'; ctx.lineWidth = 1.2; ctx.stroke();
+    ctx.strokeStyle = 'rgba(6,22,38,.6)'; ctx.lineWidth = 1.4; // 纹章:中央十字脊线
+    ctx.beginPath(); ctx.moveTo(0, -5); ctx.lineTo(0, 6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-3.8, -.8); ctx.lineTo(3.8, -.8); ctx.stroke();
+  } else {
+    // 磁铁图标:开口向上的马蹄形,红色磁体 + 银白极帽 + 内缘高光
+    ctx.beginPath();
+    ctx.moveTo(-7, -8); ctx.lineTo(-3, -8); ctx.lineTo(-3, 0);
+    ctx.arc(0, 0, 3, Math.PI, 0, true);          // 内弧(经底部)
+    ctx.lineTo(3, -8); ctx.lineTo(7, -8); ctx.lineTo(7, 0);
+    ctx.arc(0, 0, 7, 0, Math.PI, false);         // 外弧(经底部)
+    ctx.closePath();
+    ctx.fillStyle = '#ff8296'; ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,214,222,.9)'; ctx.lineWidth = 1.1; ctx.stroke();
+    ctx.fillStyle = '#e9f5ff';                   // 银白极帽(南北极)
+    ctx.fillRect(-7, -8, 4, 2.8);
+    ctx.fillRect(3, -8, 4, 2.8);
+    ctx.strokeStyle = 'rgba(140,30,50,.55)'; ctx.lineWidth = 1; // 极帽分界
+    ctx.beginPath(); ctx.moveTo(-7, -5.2); ctx.lineTo(-3, -5.2); ctx.moveTo(3, -5.2); ctx.lineTo(7, -5.2); ctx.stroke();
+  }
   ctx.restore();
 }
 function drawRemains(part) {
@@ -829,7 +845,8 @@ function smoothPoints(body, gap = .5) { // 在折点间插值,让 bot 蛇身连�
 }
 function drawBot(bot, time) {
   const shielded = bot.shield > 0;
-  strokeGlowPath(bot.body, bot.color, 9, shielded ? 12 : 0, shielded ? .3 : .15);
+  const fast = bot.speed > BOT_SPEED * 1.12; // 冲刺/逃逸时轨迹发光增强
+  strokeGlowPath(bot.body, bot.color, 9, shielded ? 12 : fast ? 16 : 0, shielded ? .3 : fast ? .32 : .15);
   drawTaperedBody(smoothPoints(bot.body), 6.2, 3.2, () => bot.color, (t) => .38 + (1 - t) * .58);
   drawEyes(bot.body[0], { x: Math.cos(bot.angle), y: Math.sin(bot.angle) }, 6.2);
   if (shielded) {
@@ -842,15 +859,14 @@ function drawBot(bot, time) {
   }
 }
 function drawSnake(time) {
-  const burning = boosting && !boostLock && energy > 0;
-  strokeGlowPath(snake, burning ? '#ffd87a' : '#2de4d0', 10, burning ? 24 : 15, .3);
+  strokeGlowPath(snake, '#2de4d0', 10, 15, .3);
   drawTaperedBody(snake, 6.4, 3.4, (t) => bodyColor(Math.pow(t, .85)));
   // 头部高光
   const h = snake[0], hr = 7.2;
   ctx.save();
-  ctx.shadowBlur = 18; ctx.shadowColor = burning ? '#ffd87a' : '#b8ff56';
+  ctx.shadowBlur = 18; ctx.shadowColor = '#b8ff56';
   const hg = ctx.createRadialGradient(h.x * cell - 2, h.y * cell - 2, 1, h.x * cell, h.y * cell, hr);
-  hg.addColorStop(0, '#e8ffa8'); hg.addColorStop(1, burning ? '#ffd87a' : '#9df05f');
+  hg.addColorStop(0, '#e8ffa8'); hg.addColorStop(1, '#9df05f');
   ctx.fillStyle = hg;
   ctx.beginPath(); ctx.arc(h.x * cell, h.y * cell, hr, 0, 7); ctx.fill();
   ctx.restore();
@@ -945,34 +961,25 @@ function drawPause() {
   ctx.fillText('按 空格 键继续', W / 2, H / 2 + 20);
 }
 function drawRadar(time) {
-  mctx.fillStyle = '#06121e'; mctx.fillRect(0, 0, 132, 88);
-  mctx.strokeStyle = 'rgba(84,207,205,.17)'; mctx.strokeRect(1, 1, 130, 86);
-  // 扫描扇形
-  const sweep = (time / 1500) % (Math.PI * 2);
-  if (mctx.createConicGradient) {
-    const grad = mctx.createConicGradient(sweep, 66, 44);
-    grad.addColorStop(0, 'rgba(50,230,208,.20)');
-    grad.addColorStop(.15, 'rgba(50,230,208,0)');
-    grad.addColorStop(1, 'rgba(50,230,208,0)');
-    mctx.fillStyle = grad;
-    mctx.fillRect(2, 2, 128, 84);
-  }
-  mctx.strokeStyle = 'rgba(50,230,208,.5)';
-  mctx.beginPath(); mctx.moveTo(66, 44); mctx.lineTo(66 + Math.cos(sweep) * 70, 44 + Math.sin(sweep) * 70); mctx.stroke();
-  foods.forEach((f) => { mctx.fillStyle = '#bfff57'; mctx.fillRect((f.x / 60) * 132, (f.y / 40) * 88, 2, 2); });
-  powerUps.forEach((item) => {
+  // 极简雷达:透明背景,只标记排行榜前三名(含玩家)的蛇头位置
+  mctx.clearRect(0, 0, 132, 88);
+  const entries = [
+    ...bots.map((b) => ({ x: b.body[0].x, y: b.body[0].y, color: b.color, score: b.score })),
+    { x: snake[0].x, y: snake[0].y, color: '#32e6d0', score: score + Math.floor(snake.length / 3) * 10, mine: true },
+  ].sort((a, b) => b.score - a.score).slice(0, 3);
+  for (const e of entries) {
+    const x = (e.x / 60) * 132, y = (e.y / 40) * 88;
     mctx.save();
-    mctx.translate((item.x / 60) * 132, (item.y / 40) * 88); mctx.rotate(Math.PI / 4);
-    mctx.fillStyle = item.type === 'magnet' ? '#ff687b' : '#79f3ff';
-    mctx.fillRect(-1.8, -1.8, 3.6, 3.6);
-    mctx.restore();
-  });
-  bots.forEach((b) => { mctx.fillStyle = b.color; mctx.fillRect((b.body[0].x / 60) * 132, (b.body[0].y / 40) * 88, 4, 4); });
-  if (snake) {
-    mctx.fillStyle = '#32e6d0';
+    mctx.shadowColor = e.color; mctx.shadowBlur = 8;    // 同色发光,深色战场上清晰可辨
+    mctx.fillStyle = e.color;
     mctx.beginPath();
-    mctx.arc((snake[0].x / 60) * 132, (snake[0].y / 40) * 88, 2.6 + Math.sin(time / 170) * .8, 0, 7);
+    mctx.arc(x, y, e.mine ? 3.6 + Math.sin(time / 170) * .9 : 3, 0, 7); // 玩家点更大且脉冲
     mctx.fill();
+    mctx.restore();
+    if (e.mine) {                                        // 玩家点加白色描边,一眼定位自己
+      mctx.strokeStyle = 'rgba(234,252,255,.9)'; mctx.lineWidth = 1;
+      mctx.beginPath(); mctx.arc(x, y, 4.6, 0, 7); mctx.stroke();
+    }
   }
 }
 
@@ -986,10 +993,6 @@ function setDir(dir) {
 function setKnob(dir) {
   if (!ui.knob) return;
   ui.knob.style.transform = `translate(${dir.x * 26}px, ${dir.y * 26}px)`;
-}
-function setBoost(active) {
-  boosting = active;
-  ui.boost.classList.toggle('active', active);
 }
 function setWheelDirection(event) {
   const rect = ui.wheel.getBoundingClientRect();
@@ -1015,6 +1018,13 @@ function syncFullscreenUI() {
   ui.fullscreen.setAttribute('aria-label', active ? '退出全屏' : '全屏游戏');
   ui.fullscreen.title = active ? '退出全屏 (F)' : '全屏游戏 (F)';
 }
+// 确保全屏:仅在未全屏时请求进入(区别于切换,已全屏时不会退出)
+function ensureFullscreen() {
+  if (fullscreenElement()) return;
+  const root = document.documentElement;
+  if (root.requestFullscreen) root.requestFullscreen().catch(() => { /* 请求被拒绝时静默忽略 */ });
+  else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen(); // Safari
+}
 
 window.addEventListener('keydown', (e) => {
   const map = {
@@ -1024,11 +1034,9 @@ window.addEventListener('keydown', (e) => {
     ArrowRight: { x: 1, y: 0 }, d: { x: 1, y: 0 },
   };
   if (map[e.key]) { e.preventDefault(); setDir(map[e.key]); }
-  if (e.key === 'Shift') setBoost(true);          // 修复:原先用 e.code==='Shift' 永远不匹配
   if (e.code === 'Space') { e.preventDefault(); togglePause(); }
   if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) { e.preventDefault(); toggleFullscreen(); }
 });
-window.addEventListener('keyup', (e) => { if (e.key === 'Shift') setBoost(false); });
 
 ui.wheel.addEventListener('pointerdown', (e) => {
   if (e.target.closest('.wheel-center')) { togglePause(); return; }
@@ -1038,9 +1046,6 @@ ui.wheel.addEventListener('pointerdown', (e) => {
 });
 ui.wheel.addEventListener('pointermove', (e) => { if (wheelActive) setWheelDirection(e); });
 ['pointerup', 'pointercancel'].forEach((ev) => ui.wheel.addEventListener(ev, () => (wheelActive = false)));
-
-['pointerdown', 'touchstart'].forEach((ev) => ui.boost.addEventListener(ev, (e) => { e.preventDefault(); setBoost(true); }));
-['pointerup', 'pointerleave', 'pointercancel', 'touchend'].forEach((ev) => ui.boost.addEventListener(ev, () => setBoost(false)));
 
 document.querySelectorAll('.difficulty').forEach((button) => button.addEventListener('click', () => {
   if (running) return;
@@ -1074,3 +1079,10 @@ if (ui.brainReset) ui.brainReset.addEventListener('click', () => {
 // ===== 初始化 =====
 reset();
 draw(0);
+
+// ===== 调试接口(只读,浏览器控制台可用) =====
+Object.defineProperty(window, '__snake', { value: {
+  get foods() { return foods; }, get bots() { return bots; }, get powerUps() { return powerUps; }, get remains() { return remains; },
+  get stars() { return foods.filter((f) => f.star); },
+  get player() { return { len: snake.length, score, shield: playerShield, head: [snake[0].x, snake[0].y] }; },
+}});
