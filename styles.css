@@ -43,3 +43,37 @@ body.is-fullscreen .game-layout{padding:12px 0;gap:18px}
 body.is-fullscreen .arena-frame{max-width:calc((100vh - 100px)*1.5);margin-inline:auto}
 body.is-fullscreen .game-layout{grid-template-columns:150px minmax(0,1fr)}
 
+/* ===== 战绩清空按钮(records 页复用) ===== */
+.brain-reset{padding:6px 14px;color:#ff9d9d;border:1px solid rgba(255,120,110,.35);border-radius:5px;background:rgba(60,20,22,.35);font:600 10px 'DM Sans',sans-serif;cursor:pointer}
+.brain-reset:hover{color:#ffd7d7;border-color:rgba(255,120,110,.6)}
+
+/* ===== 主导航菜单 ===== */
+.main-nav{display:flex;gap:2px;margin-left:20px}
+.main-nav a{padding:6px 11px;border-radius:6px;color:#8fa3c0;font:600 12px 'DM Sans',sans-serif;letter-spacing:.4px;text-decoration:none;white-space:nowrap}
+.main-nav a:hover{color:#eaf3ff;background:rgba(123,182,255,.08)}
+.main-nav a.active{color:var(--cyan);background:rgba(50,230,208,.12)}
+
+/* ===== 内容页(战绩榜/玩法指南) ===== */
+.page-body{flex:1;padding:40px 0 30px;max-width:980px;margin:0 auto;width:100%}
+.page-hero{margin-bottom:26px}
+.page-hero h1{margin:6px 0 8px;font:700 clamp(34px,4.5vw,52px) 'Barlow Condensed',sans-serif;letter-spacing:1px}
+.page-hero p{margin:0;color:#a7b6ca;font-size:13px}
+.guide-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px}
+.guide-card{padding:18px 18px 15px;border:1px solid var(--line);border-radius:11px;background:linear-gradient(160deg,rgba(18,34,57,.86),rgba(7,15,27,.8))}
+.guide-card h2{margin:5px 0 10px;font:600 21px 'Barlow Condensed',sans-serif;letter-spacing:.5px}
+.guide-card ul{margin:0;padding:0;list-style:none}
+.guide-card li{margin-top:9px;padding-left:13px;position:relative;color:#9db0c9;font-size:12px;line-height:1.6}
+.guide-card li:before{content:'';position:absolute;left:0;top:8px;width:5px;height:5px;border-radius:50%;background:var(--cyan);box-shadow:0 0 6px rgba(50,230,208,.6)}
+.guide-card li b{color:#e4f2ff;font-weight:600}
+.records-panel{padding:20px;border:1px solid var(--line);border-radius:11px;background:linear-gradient(160deg,rgba(18,34,57,.86),rgba(7,15,27,.8))}
+.records-table{width:100%;border-collapse:collapse;font-size:12px}
+.records-table th{padding:9px 10px;text-align:left;color:#8292ac;font:600 10px 'DM Sans',sans-serif;text-transform:uppercase;letter-spacing:.7px;border-bottom:1px solid var(--line)}
+.records-table td{padding:10px;color:#c7d4e7;border-bottom:1px solid rgba(170,205,255,.07)}
+.records-table td strong{color:#f4faff;font:700 17px 'Barlow Condensed',sans-serif}
+.records-table tr.hot td{background:rgba(189,255,77,.05)}
+.records-table .record-badge{margin-left:4px;padding:2px 6px;border-radius:10px;color:#161006;background:linear-gradient(90deg,#ffd87a,#a1f65b);font:700 10px 'DM Sans',sans-serif;font-style:normal}
+.records-empty{display:flex;flex-direction:column;align-items:center;gap:14px;padding:44px 0 34px;color:#8b9ab4;font-size:13px}
+.records-actions{display:flex;align-items:center;justify-content:space-between;margin-top:14px}
+.records-actions .brain-reset{margin-top:0;width:auto;padding:6px 14px}
+.records-count{color:#687b97;font-size:11px;letter-spacing:.4px}
+@media(max-width:720px){.main-nav{margin-left:8px}.main-nav a{padding:5px 7px;font-size:10px}.page-body{padding:24px 0 18px}.records-table th,.records-table td{padding:7px 6px}.records-table th:nth-child(6),.records-table td:nth-child(6){display:none}}

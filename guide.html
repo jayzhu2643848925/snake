@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07101e" />
+    <title>玩法指南 · 蛇域竞技场</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307101e'/%3E%3Ccircle cx='32' cy='30' r='15' fill='none' stroke='%2332e6d0' stroke-width='5' stroke-linecap='round' stroke-dasharray='70 25' transform='rotate(-45 32 30)'/%3E%3Ccircle cx='40' cy='39' r='4' fill='%23bdff4d'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/index.html" aria-label="蛇域竞技场主页">
+          <span class="brand-mark">S</span>
+          <span>蛇域<span>竞技场</span></span>
+        </a>
+        <nav class="main-nav" aria-label="主导航">
+          <a href="/index.html">竞技场</a>
+          <a href="/records.html">战绩榜</a>
+          <a href="/guide.html" class="active">玩法指南</a>
+        </nav>
+      </header>
+
+      <section class="page-body">
+        <div class="page-hero">
+          <span class="eyebrow">GAME GUIDE</span>
+          <h1>玩法指南</h1>
+          <p>霓虹战场生存手册：从基础操作到 AI 对抗策略。</p>
+        </div>
+
+        <div class="guide-grid">
+          <article class="guide-card">
+            <span class="eyebrow">CONTROLS</span>
+            <h2>基础操作</h2>
+            <ul>
+              <li><b>轮盘</b>：竞技场左下角悬浮轮盘，拖动 360° 自由转向</li>
+              <li><b>WASD / 方向键</b>：四向移动蛇头</li>
+              <li><b>Space / 轮盘中心</b>：暂停或继续</li>
+              <li><b>开始游戏</b>：点击「开始战斗 / 再来一局」自动进入全屏，F 键随时切换</li>
+              <li><b>F / 顶栏按钮</b>：全屏或退出全屏</li>
+            </ul>
+          </article>
+
+          <article class="guide-card">
+            <span class="eyebrow">GROWTH</span>
+            <h2>食物与成长</h2>
+            <ul>
+              <li><b>能量块</b>：+10 分，缓慢变长，快速连吃触发连击加成（最高 ×3）</li>
+              <li><b>金色星星</b>：+35 分，大幅成长；以与道具<b>相同的速度漂移</b>，需要预判拦截</li>
+              <li><b>蛇类残骸</b>：+4 分，击杀后掉落，与 AI 蛇争夺战利品</li>
+            </ul>
+          </article>
+
+          <article class="guide-card">
+            <span class="eyebrow">POWER-UPS</span>
+            <h2>道具</h2>
+            <ul>
+              <li><b>护盾</b>：7 秒保护。蛇对蛇相撞时，任一方有护盾则双方无伤<b>自然穿过</b>；但<b>撞墙必死</b>，护盾无法幸免</li>
+              <li><b>磁力</b>：7 秒内，吸附半径内的<b>食物与残骸</b>（含漂移中的星星）持续飞向；半径外的目标保持不动；护盾/磁铁道具<b>不受磁场影响</b></li>
+              <li>道具在场上缓慢游动，7~13 秒后消失，先到先得</li>
+            </ul>
+          </article>
+
+          <article class="guide-card">
+            <span class="eyebrow">RADAR</span>
+            <h2>极简雷达</h2>
+            <ul>
+              <li>雷达只标记<b>排行榜前三名</b>（含你）的蛇头位置，玩家为青色脉冲点</li>
+              <li>轮盘悬浮在竞技场左下角，半透明不遮挡战场</li>
+              <li>盯紧雷达：能登上前三的对手才是真正的威胁</li>
+            </ul>
+          </article>
+
+          <article class="guide-card">
+            <span class="eyebrow">BOT AI</span>
+            <h2>AI 蛇</h2>
+            <ul>
+              <li>AI 会<b>抢夺食物</b>长大、吞食残骸，成长规则与玩家完全一致——越吃越长</li>
+              <li>高速巡游时燃烧蛇身换速度，冲刺与体型的权衡同样困扰着它们</li>
+              <li>具备威胁预判与前瞻避障，高侵略性个体会<b>预判截击</b>你的路线</li>
+              <li>每条 AI 有独立性格（贪食 / 谨慎 / 侵略），行为各不相同</li>
+            </ul>
+          </article>
+
+          <article class="guide-card">
+            <span class="eyebrow">NEURAL NET</span>
+            <h2>会学习的对手</h2>
+            <ul>
+              <li>AI 蛇共享一个<b>强化学习大脑</b>：每场对局都在线训练，越战越强</li>
+              <li>左侧面板可查看训练进度、适应度曲线与当前主策略</li>
+              <li>学习记忆保存在浏览器中，可随时用「清除 AI 学习记忆」按钮从头训练</li>
+            </ul>
+          </article>
+
+          <article class="guide-card">
+            <span class="eyebrow">RULES</span>
+            <h2>碰撞规则</h2>
+            <ul>
+              <li>蛇身可自由缠绕自己，自撞不会死亡</li>
+              <li><b>撞墙必死</b>——即使有护盾也无法幸免</li>
+              <li>撞到其他蛇：<b>撞击方死亡</b>（AI 撞你 = 反杀），除非任一方有护盾则穿过</li>
+            </ul>
+          </article>
+
+          <article class="guide-card">
+            <span class="eyebrow">RECORDS</span>
+            <h2>战绩与结算</h2>
+            <ul>
+              <li>每场战斗结束自动记录得分、长度、击杀与存活时间</li>
+              <li>突破历史最高分时结算面板会标记 <b>★ 新纪录</b></li>
+              <li>前往<b>战绩榜</b>页面查看最近 50 场战斗记录</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <footer><span>© 2026 SNAKE ARENA</span><span>独自闯入 · 即刻开战</span></footer>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#07101e" />
+    <title>战绩榜 · 蛇域竞技场</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2307101e'/%3E%3Ccircle cx='32' cy='30' r='15' fill='none' stroke='%2332e6d0' stroke-width='5' stroke-linecap='round' stroke-dasharray='70 25' transform='rotate(-45 32 30)'/%3E%3Ccircle cx='40' cy='39' r='4' fill='%23bdff4d'/%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/index.html" aria-label="蛇域竞技场主页">
+          <span class="brand-mark">S</span>
+          <span>蛇域<span>竞技场</span></span>
+        </a>
+        <nav class="main-nav" aria-label="主导航">
+          <a href="/index.html">竞技场</a>
+          <a href="/records.html" class="active">战绩榜</a>
+          <a href="/guide.html">玩法指南</a>
+        </nav>
+      </header>
+
+      <section class="page-body">
+        <div class="page-hero">
+          <span class="eyebrow">BATTLE RECORDS</span>
+          <h1>战绩榜</h1>
+          <p>最近 50 场战斗的本地记录，数据保存在你的浏览器中。</p>
+        </div>
+        <div class="records-panel">
+          <table class="records-table">
+            <thead>
+              <tr><th>时间</th><th>难度</th><th>得分</th><th>长度</th><th>击杀</th><th>存活</th><th>最高连击</th></tr>
+            </thead>
+            <tbody id="recordsBody"></tbody>
+          </table>
+          <div class="records-empty" id="recordsEmpty">
+            <span>还没有战斗记录</span>
+            <a class="primary-button" href="/index.html">前往竞技场开战 <span class="arrow">→</span></a>
+          </div>
+          <div class="records-actions">
+            <span id="recordsCount" class="records-count"></span>
+            <button class="brain-reset" id="clearRecords" type="button">清空战绩</button>
+          </div>
+        </div>
+      </section>
+
+      <footer><span>© 2026 SNAKE ARENA</span><span>独自闯入 · 即刻开战</span></footer>
+    </main>
+    <script>
+      const readRecords = () => { try { return JSON.parse(localStorage.getItem('snakeArenaRecords') || '[]'); } catch { return []; } };
+      const body = document.getElementById('recordsBody');
+      const empty = document.getElementById('recordsEmpty');
+      const count = document.getElementById('recordsCount');
+      function render() {
+        const records = readRecords();
+        empty.style.display = records.length ? 'none' : 'flex';
+        count.textContent = records.length ? `共 ${records.length} 条记录` : '';
+        body.innerHTML = records.map((r) => `
+          <tr class="${r.record ? 'hot' : ''}">
+            <td>${r.date}</td>
+            <td>${r.difficulty}</td>
+            <td><strong>${r.score}</strong>${r.record ? ' <em class="record-badge">★</em>' : ''}</td>
+            <td>${r.length}</td>
+            <td>${r.kills}</td>
+            <td>${r.survived}s</td>
+            <td>×${r.combo}</td>
+          </tr>`).join('');
+      }
+      document.getElementById('clearRecords').addEventListener('click', () => {
+        localStorage.removeItem('snakeArenaRecords');
+        render();
+      });
+      render();
+    </script>
+  </body>
+</html>

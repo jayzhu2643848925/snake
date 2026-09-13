@@ -161,6 +161,15 @@ function gameOver() {
   const length = Math.floor(snake.length / 3);
   const survived = Math.round(elapsed / 1000);
   const isRecord = score > prevBest && score > 0;
+  // 保存战绩到本地记录(战绩榜页面展示,最多保留 50 条)
+  try {
+    const records = JSON.parse(localStorage.snakeArenaRecords || '[]');
+    records.unshift({
+      date: new Date(Date.now() - elapsed).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+      difficulty: difficultyConfig[difficulty].label, score, length, kills, survived, combo: Math.max(maxCombo, 1), record: isRecord,
+    });
+    localStorage.snakeArenaRecords = JSON.stringify(records.slice(0, 50));
+  } catch { /* 存储不可用时忽略 */ }
   ui.status.textContent = '本局结束';
   ui.best.textContent = best;
   ui.kills.textContent = kills;
