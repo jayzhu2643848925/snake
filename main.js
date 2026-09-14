@@ -235,9 +235,9 @@ function loop(now) {
         if (item.y < 2 || item.y > 38) item.dy *= -1;
         return item.life > 0;
       });
-      // 星星漂移(与道具同速同基准,碰壁反弹;普通食物静止);磁力激活期间暂停漂移——半径外保持不动,磁力结束后恢复
+      // 星星漂移(与道具同速同基准,碰壁反弹;普通食物静止);磁力激活期间暂停漂移——半径外保持不动,磁力结束后恢复;已被磁力锁定的星星不再漂移,直至入口
       if (!magnetTimer) for (const f of foods) {
-        if (!f.star) continue;
+        if (!f.star || f.mag) continue;
         f.x += f.dx * delta; f.y += f.dy * delta;
         if (f.x < 1.5 || f.x > arena.w - 1.5) f.dx *= -1;
         if (f.y < 1.5 || f.y > arena.h - 1.5) f.dy *= -1;
@@ -296,17 +296,22 @@ function tick() {
   snake.unshift(head);
   let growth = 0;
 
-  // 磁力吸引:半径 7 格内的食物与残骸被拉向玩家;半径外完全静止
-  // 磁力期间星星漂移暂停(见 loop 中 magnetTimer 判断),半径外保持不动、半径内仅受磁力;护盾/磁铁道具不受磁场影响
+  // 磁力吸引:半径 7 格内的食物与残骸一旦进入即被"锁定",此后持续吸入直至入口——绝不出现吸到一半就停滞的食物
+  // 锁定后即使被玩家移动甩出半径、或磁力时间耗尽也照吸不误;拉力随距离自适应且下限始终高于玩家移速(.48/步),保证必能追上蛇头
+  // 磁力期间星星漂移暂停(见 loop 中 magnetTimer 判断),未被锁定的目标保持不动;护盾/磁铁道具不受磁场影响
   if (magnetTimer) {
-    for (const f of foods) {
-      const dx = head.x - f.x, dy = head.y - f.y, d = Math.hypot(dx, dy);
-      if (d < 7 && d > .1) { f.x += (dx / d) * .28; f.y += (dy / d) * .28; } // 半径内:统一拉力吸入
-    }
-    remains.forEach((p) => {
-      const dx = head.x - p.x, dy = head.y - p.y, d = Math.hypot(dx, dy);
-      if (d < 7 && d > .1) { p.x += (dx / d) * .18; p.y += (dy / d) * .18; }
-    });
+    for (const f of foods) if (!f.mag && dist(head, f) < 7) f.mag = true;   // 进入半径即锁定
+    for (const p of remains) if (!p.mag && dist(head, p) < 7) p.mag = true;
+  }
+  for (const f of foods) { // 锁定的食物:飞向蛇头,拉至进食半径(.75)内当拍即被吃掉
+    if (!f.mag) continue;
+    const dx = head.x - f.x, dy = head.y - f.y, d = Math.hypot(dx, dy);
+    if (d > .75) { const pull = Math.max(.6, d * .3); f.x += (dx / d) * pull; f.y += (dy / d) * pull; }
+  }
+  for (const p of remains) { // 锁定的残骸:同理,拉力略缓但同样必能追上
+    if (!p.mag) continue;
+    const dx = head.x - p.x, dy = head.y - p.y, d = Math.hypot(dx, dy);
+    if (d > .72) { const pull = Math.max(.55, d * .25); p.x += (dx / d) * pull; p.y += (dy / d) * pull; }
   }
 
   // 进食:连击加成
