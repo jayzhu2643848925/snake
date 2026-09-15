@@ -80,6 +80,7 @@ function makeBot(name, color, x, y, angle) {
   const body = [];
   const segs = 10 + Math.floor(Math.random() * 14); // 每节间距 .5 格,视觉长度 5~12 格
   for (let i = 0; i < segs; i++) body.push({ x: x - Math.cos(angle) * BOT_SPEED * i, y: y - Math.sin(angle) * BOT_SPEED * i });
+  const skill = .7 + Math.random() * .45;           // 个体熟练度:同场既有新手也有老手
   return {
     name, color, body, angle, targetAngle: angle, steerCd: 0,
     score: body.length * 7, shield: 5000, growth: 0, speed: BOT_SPEED, // speed:当前游速(决策层动态调整)
@@ -87,8 +88,15 @@ function makeBot(name, color, x, y, angle) {
     burn: 0,                                           // 高速燃烧的蛇身节数(单向累积)
     greed: .75 + Math.random() * .5,    // 性格:贪食度(食物吸引权重)
     caution: .75 + Math.random() * .55, // 性格:谨慎度(威胁规避权重)
-    inertia: .1 + Math.random() * .09,  // 性格:惯性(转向代价)
+    inertia: .75 + Math.random() * .5,  // 性格:惯性(转向代价系数,高者习惯大弧线转弯)
     aggro: Math.random(),               // 性格:侵略性(高者会预判截击玩家)
+    // ===== 真人模拟:有限视野 / 反应延迟 / 注意力 / 应急反射 =====
+    skill,                                                     // 熟练度 [.7,1.15]:决定视野远近/手抖幅度/反应快慢
+    vision: (9 + skill * 4) * Math.sqrt(difficultyConfig[difficulty].iq), // 视野半径(格):像玩家一样只看得见自己的"屏幕"(玩家镜头半宽 15 格/半高 10 格)
+    reactTicks: 2 + Math.round((1.15 - skill) * 4),            // 威胁感知延迟(步):约 130~260ms 的反应时间
+    goal: null, goalT: 0,                                      // 注意力:锁定的目标与剩余专注步数(追出视野也不换)
+    dangers: [], dangerCd: 0,                                  // 威胁感知快照:按反应周期刷新,远威胁不会瞬间响应
+    panic: 0,                                                  // 恐慌反射剩余步数(贴脸威胁触发,不经大脑)
     pendingExp: null,                   // 强化学习:上一决策的(特征,累计奖励),待下一次决策时做 TD 更新
     lifeTicks: 0, foods: 0,             // 强化学习:本条生命存活步数 / 进食次数(适应度统计)
   };
@@ -318,6 +326,7 @@ function tick() {
   for (let i = foods.length - 1; i >= 0; i--) {
     const f = foods[i];
     if (dist(head, f) < .75) {
+      f.gone = true;                          // 标记已被吃掉:盯上它的 AI 会扑空,随即另觅目标
       foods.splice(i, 1); foods.push(makeFood());
       combo = Math.min(combo + 1, 9); comboTimer = COMBO_WINDOW; maxCombo = Math.max(maxCombo, combo);
       const multiplier = 1 + Math.min(combo - 1, 4) * .5; // 最高 ×3
@@ -334,7 +343,7 @@ function tick() {
 
   // 吞食残骸
   remains = remains.filter((part) => {
-    if (dist(head, part) < .72) { score += 4; growth += 1; burst(part.x, part.y, part.color); return false; }
+    if (dist(head, part) < .72) { part.gone = true; score += 4; growth += 1; burst(part.x, part.y, part.color); return false; }
     return true;
   });
 
@@ -384,13 +393,13 @@ const brain = {
   },
   value(f) { let v = 0; for (let i = 0; i < f.length; i++) v += this.w[i] * f[i]; return v; },
   maxNext(cands) { let m = -1e9; for (const c of cands) { const v = this.value(c.f); if (v > m) m = v; } return m; },
-  // 决策:ε 概率在安全候选中随机探索,否则贪心选价值最高(低难度注入手抖噪声)
-  decide(cands, iq) {
+  // 决策:ε 概率在安全候选中随机探索,否则贪心选价值最高(低难度/低熟练度注入手抖噪声)
+  decide(cands, iq, skill = 1) {
     this.steps++;
     this.epsilon = Math.max(.08, this.epsilon * .9997);          // 探索率衰减到 8% 保底
     if (this.lr > .004 && this.steps % 600 === 0) this.lr *= .985; // 学习率退火
     if (--this.saveCd <= 0) { this.saveCd = 120; this.save(); }    // 节流持久化
-    const noise = (Math.random() - .5) * (1.6 - iq);
+    const noise = (Math.random() - .5) * (1.6 - iq) * (1.35 - skill * .5); // 新手手更抖,老手又稳又准
     if (Math.random() < this.epsilon) {
       const c = cands[Math.floor(Math.random() * cands.length)];
       c.v = this.value(c.f) + noise;
@@ -434,10 +443,12 @@ function nearbyObstacles(bot, range) {
 }
 
 // 收集威胁点:各蛇头沿当前航向的预测位置(有护盾的一方撞不死 AI,跳过不设威胁)
+// 只保留视野内的威胁源——屏幕外的蛇,真人同样看不见、也无从反应
 function predictedDangers(bot) {
   const out = [];
+  const h = bot.body[0], vr2 = (bot.vision + 1.5) ** 2;
   const push = (x, y) => { if (x > 1 && x < arena.w - 1 && y > 1 && y < arena.h - 1) out.push({ x, y }); };
-  if (playerShield <= 0) {
+  if (playerShield <= 0 && dist2(snake[0].x - h.x, snake[0].y - h.y) < vr2) {
     const ph = snake[0];
     const pSpeed = .48; // 玩家恒速
     push(ph.x + direction.x * pSpeed * 2, ph.y + direction.y * pSpeed * 2);
@@ -446,28 +457,37 @@ function predictedDangers(bot) {
   for (const o of bots) {
     if (o === bot || o.shield > 0) continue;
     const b = o.body[0];
+    if (dist2(b.x - h.x, b.y - h.y) >= vr2) continue; // 视野外的对手:在它的世界里不存在
     push(b.x + Math.cos(o.angle), b.y + Math.sin(o.angle));
   }
   return out;
 }
 
 // 目标选择:食物/残骸/截击点按"价值÷距离"择优,落在威胁圈附近的目标降权
+// 只考虑视野内的目标(真人只看得到自己屏幕里的东西);视野内空无一物时返回 null
 function chooseGoal(bot, dangers) {
-  const h = bot.body[0];
+  const h = bot.body[0], vr2 = bot.vision * bot.vision;
   let best = null, bestScore = 0;
-  const consider = (x, y, value) => {
+  const consider = (x, y, value, ref, drift) => {
+    if (dist2(x - h.x, y - h.y) > vr2) return;                  // 屏幕外:不可见,等于不存在
     let s = value / (Math.hypot(x - h.x, y - h.y) + .001);
     for (const g of dangers) { if (dist2(x - g.x, y - g.y) < 9) { s *= .45; break; } }
-    if (s > bestScore) { bestScore = s; best = { x, y }; }
+    if (s > bestScore) { bestScore = s; best = { x, y, f: ref || null, drift: !!drift }; }
   };
-  for (const f of foods) consider(f.x, f.y, f.star ? 95 : 30); // 星星价值更高
-  for (const r of remains) consider(r.x, r.y, 16);              // 残骸次之,顺手扫食
+  for (const f of foods) consider(f.x, f.y, f.star ? 95 : 30, f, true); // 星星价值更高
+  for (const r of remains) consider(r.x, r.y, 16, r);                   // 残骸次之,顺手扫食
   // 高侵略性 AI 且玩家无护盾:预判玩家前进路线,把身体横在玩家前方(截击)
   if (bot.aggro > .7 && playerShield <= 0 && difficultyConfig[difficulty].iq >= 1) {
     const ph = snake[0], cx = ph.x + direction.x * 5, cy = ph.y + direction.y * 5;
     if (dist2(cx - h.x, cy - h.y) < 100) consider(cx, cy, 55);
   }
   return best;
+}
+
+// 视野内没有目标:像真人一样朝空旷方向漫游(期间视野里一旦出现食物,立刻就会盯上)
+function roamGoal(bot) {
+  const h = bot.body[0], a = Math.random() * Math.PI * 2, r = 7 + Math.random() * 8;
+  return { x: clamp(h.x + Math.cos(a) * r, 3, arena.w - 3), y: clamp(h.y + Math.sin(a) * r, 3, arena.h - 3), roam: true };
 }
 
 // 前瞻模拟:按实际转向速率和当前游速画弧线前进(而非直线射线),返回能存活的步数,轨迹写入 path 复用
@@ -494,10 +514,23 @@ function botSteer(bot) {
   const iq = difficultyConfig[difficulty].iq;
   const look = clamp(Math.round(9 * iq), 5, 12);        // 难度越高看得越远
   const obstacles = nearbyObstacles(bot, look * bot.speed + 4);
-  const dangers = predictedDangers(bot);
-  const goal = chooseGoal(bot, dangers);
+  const dangers = bot.dangers;                          // 延迟快照:威胁感知有反应时间,不会瞬间响应
+  // 注意力机制:维持锁定的目标——真人盯上一个目标会追着跑,不会每 100ms 重新全局评估
+  let goal = bot.goal;
+  if (goal && goal.f) {
+    if (goal.f.gone) goal = null;                       // 目标已被别人吃掉:扑空,像人一样重新找食
+    else if (goal.drift) { goal.x = goal.f.x; goal.y = goal.f.y; } // 星星会漂移,持续盯梢同步坐标
+  }
+  if (goal && bot.goalT <= 0) goal = null;              // 专注超时:失去耐心,重新审视局势
+  if (goal && dist(h, goal) < 1.2 && (!goal.f || goal.f.gone || dist(goal.f, h) > 2)) goal = null; // 抵近仍无所得 = 记忆过期
+  if (goal && goal.roam) { const seen = chooseGoal(bot, dangers); if (seen) goal = seen; } // 漫游中瞥见食物,立刻盯上
+  if (!goal) {
+    goal = chooseGoal(bot, dangers) || roamGoal(bot);   // 视野内择优;啥也看不见就朝空旷处游
+    bot.goalT = goal.roam ? 22 + Math.floor(Math.random() * 18) : 45 + Math.floor(Math.random() * 35);
+  }
+  bot.goal = goal;
   const path = Array.from({ length: look }, () => ({ x: 0, y: 0 }));
-  const gd = goal ? Math.max(Math.hypot(goal.x - h.x, goal.y - h.y), 2) : 0;
+  const gd = Math.max(Math.hypot(goal.x - h.x, goal.y - h.y), 2);
   const cands = [];
   for (const o of BOT_STEER_OFFSETS) {
     const a = normAngle(bot.angle + o);
@@ -509,24 +542,23 @@ function botSteer(bot) {
       const q = 6.25 - dist2(path[i].x - g.x, path[i].y - g.y);
       if (q > 0) threat += q * (1 - i / look);
     }
-    const food = goal                                   // 朝目标推进的程度 [0,2]
-      ? clamp((1 / Math.max(Math.hypot(goal.x - end.x, goal.y - end.y), 2) - 1 / gd) * 2 + 1, 0, 2)
-      : 1;
+    const food = clamp((1 / Math.max(Math.hypot(goal.x - end.x, goal.y - end.y), 2) - 1 / gd) * 2 + 1, 0, 2); // 朝目标推进的程度 [0,2]
     const wall = Math.min(Math.min(end.x, arena.w - end.x, end.y, arena.h - end.y) / 8, 1); // 终点离墙余量
-    cands.push({ a, f: [1, alive / look, Math.abs(o) / 2.6, Math.min(threat / 12, 1.5), food, wall] });
+    // 个性注入:贪食/谨慎/惯性直接缩放特征——同一颗大脑装进不同的"人",行为风格各异
+    cands.push({ a, f: [1, alive / look, (Math.abs(o) / 2.6) * bot.inertia, Math.min(threat / 12, 1.5) * bot.caution, food * bot.greed, wall] });
   }
   if (cands.length) {
     // 完成上一决策的 TD 更新:目标 = 期间奖励 + 折扣 × 本批候选的最优价值
     if (bot.pendingExp) brain.update(bot.pendingExp.f, bot.pendingExp.r, brain.maxNext(cands));
-    const pick = brain.decide(cands, iq);
+    const pick = brain.decide(cands, iq, bot.skill);
     bot.pendingExp = { f: pick.f, r: -.02 };            // 新决策开始累积奖励(含微小时间成本)
     bot.targetAngle = pick.a;
-    // 变速决策:威胁临身加速脱离,目标远时冲刺觅食,近距减速精确接近,平时巡航微波动
+    // 变速决策:威胁临身加速脱离,目标远时冲刺觅食,近距减速精确接近,平时巡航微波动(熟练者巡航更稳)
     const threatened = dangers.some((g) => dist2(h.x - g.x, h.y - g.y) < 6.25);
-    let ts = BOT_SPEED * (.9 + Math.random() * .2);
+    let ts = BOT_SPEED * (.9 + Math.random() * .2) * (.92 + bot.skill * .12);
     if (threatened) ts = BOT_SPEED * 1.3;
-    else if (goal && gd > 6) ts = BOT_SPEED * 1.18;
-    else if (goal && gd < 2.5) ts = BOT_SPEED * .82;
+    else if (gd > 6) ts = BOT_SPEED * 1.18;
+    else if (gd < 2.5) ts = BOT_SPEED * .82;
     bot.speed = lerp(bot.speed, ts, .35);
   } else {
     // 陷入重围:全周扫描选活路最长的方向(纯求生,不经过大脑),同时提速突围
@@ -540,6 +572,36 @@ function botSteer(bot) {
     }
     bot.targetAngle = best;
   }
+}
+
+// 贴脸威胁检测(实时,无延迟):3.5 格内的来袭蛇头——相当于真人的余光与直觉
+function immediateThreat(bot) {
+  if (bot.shield > 0) return null;                      // 自己有护盾撞不死,不慌
+  const h = bot.body[0];
+  if (playerShield <= 0) {
+    const ph = snake[0];
+    if (dist2(ph.x - h.x, ph.y - h.y) < 12.25) return { x: ph.x + direction.x, y: ph.y + direction.y };
+  }
+  for (const o of bots) {
+    if (o === bot || o.shield > 0) continue;            // 对方有护盾也撞不死
+    const b = o.body[0];
+    if (dist2(b.x - h.x, b.y - h.y) < 12.25) return { x: b.x + Math.cos(o.angle), y: b.y + Math.sin(o.angle) };
+  }
+  return null;
+}
+// 恐慌反射的逃跑方向:以背离威胁的航向为中心小范围扫描,选存活最长的路(手比脑快,不假深思)
+function escapeAngle(bot, threat) {
+  const h = bot.body[0];
+  const base = Math.atan2(h.y - threat.y, h.x - threat.x);
+  const look = clamp(Math.round(9 * difficultyConfig[difficulty].iq), 5, 12);
+  const obstacles = nearbyObstacles(bot, look * bot.speed + 4);
+  const path = Array.from({ length: look }, () => ({ x: 0, y: 0 }));
+  let best = base, bestAlive = -1;
+  for (const off of [0, .7, -.7, 1.4, -1.4]) {
+    const a = normAngle(base + off), alive = simulateBotPath(bot, a, obstacles, path);
+    if (alive > bestAlive) { bestAlive = alive; best = a; }
+  }
+  return best;
 }
 // AI 蛇死亡:化为尸体残留,若死于玩家则计一次击杀
 function killBot(bot, byPlayer, text = '击杀!') {
@@ -561,7 +623,20 @@ function killBot(bot, byPlayer, text = '击杀!') {
   }
 }
 function moveBot(bot) {
-  if (bot.steerCd-- <= 0) { botSteer(bot); bot.steerCd = 1 + Math.floor(Math.random() * 2); }
+  // 威胁感知快照:按个体反应周期采样(约 130~260ms)——远处的威胁要"反应一下"才被察觉
+  if (bot.dangerCd-- <= 0) { bot.dangers = predictedDangers(bot); bot.dangerCd = bot.reactTicks; }
+  // 常规决策:每 2~3 步一次(人"看一眼-想一下-打一把方向"的节奏);恐慌期间冻结大脑
+  if (bot.panic > 0) bot.steerCd = 0;
+  else if (bot.steerCd-- <= 0) { botSteer(bot); bot.steerCd = 2 + Math.floor(Math.random() * 2); }
+  if (bot.goalT > 0) bot.goalT--;
+  // 恐慌反射:贴脸威胁实时检测(余光),触发即猛打方向 + 提速逃离,不经大脑——人靠反射不靠思考
+  const thr = immediateThreat(bot);
+  if (thr && bot.panic <= 0) {
+    bot.panic = 4 + Math.floor(Math.random() * 3);
+    if (bot.pendingExp) { brain.update(bot.pendingExp.f, bot.pendingExp.r, 0); bot.pendingExp = null; } // 反射动作与大脑决策解耦
+    bot.targetAngle = escapeAngle(bot, thr);
+  }
+  if (bot.panic > 0) { bot.panic--; bot.speed = lerp(bot.speed, BOT_SPEED * 1.28, .3); }
   // 平滑转向:每步最多转 BOT_TURN_RATE 弧度,形成弧线游动
   const diff = angleDiff(bot.targetAngle, bot.angle);
   bot.angle = normAngle(bot.angle + clamp(diff, -BOT_TURN_RATE, BOT_TURN_RATE));
@@ -592,6 +667,7 @@ function moveBot(bot) {
   for (let i = foods.length - 1; i >= 0; i--) {
     const f = foods[i];
     if (dist2(n.x - f.x, n.y - f.y) < .4) {
+      f.gone = true;                                    // 通知所有盯上它的同类:这口没了
       foods.splice(i, 1); foods.push(makeFood());
       bot.score += f.star ? 35 : 10;
       bot.growth += f.star ? 12 : 3;
@@ -603,6 +679,7 @@ function moveBot(bot) {
   // 吞食残骸(击杀后的战利品争夺,回报 +0.4)
   remains = remains.filter((part) => {
     if (dist2(n.x - part.x, n.y - part.y) < .4) {
+      part.gone = true;
       bot.score += 4;
       bot.growth += 1;
       if (bot.pendingExp) bot.pendingExp.r += .4;
@@ -847,16 +924,16 @@ function drawTaperedBody(points, headR, tailR, colorAt, alphaAt) {
   }
   ctx.globalAlpha = 1;
 }
-function drawEyes(h, dir, r) {
+function drawEyes(h, dir, r, fright) {
   const ex = dir.x, ey = dir.y, px = -ey, py = ex;
   const cx = h.x * cell, cy = h.y * cell;
   for (const side of [-1, 1]) {
     const x = cx + ex * r * .45 + px * side * r * .52;
     const y = cy + ey * r * .45 + py * side * r * .52;
     ctx.fillStyle = '#fff';
-    ctx.beginPath(); ctx.arc(x, y, 2.6, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, y, fright ? 3.5 : 2.6, 0, 7); ctx.fill(); // 受惊时瞪大双眼
     ctx.fillStyle = '#0a2530';
-    ctx.beginPath(); ctx.arc(x + ex * 1.1, y + ey * 1.1, 1.3, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + ex * 1.1, y + ey * 1.1, fright ? .9 : 1.3, 0, 7); ctx.fill();
   }
 }
 function smoothPoints(body, gap = .5) { // 在折点间插值,让 bot 蛇身连贯
@@ -875,7 +952,16 @@ function drawBot(bot, time) {
   const fast = bot.speed > BOT_SPEED * 1.12; // 冲刺/逃逸时轨迹发光增强
   strokeGlowPath(bot.body, bot.color, 9, shielded ? 12 : fast ? 16 : 0, shielded ? .3 : fast ? .32 : .15);
   drawTaperedBody(smoothPoints(bot.body), 6.2, 3.2, () => bot.color, (t) => .38 + (1 - t) * .58);
-  drawEyes(bot.body[0], { x: Math.cos(bot.angle), y: Math.sin(bot.angle) }, 6.2);
+  // 视线:平时盯着目标看(注意力方向),受惊时瞪大双眼盯住前方
+  let eyeDir = { x: Math.cos(bot.angle), y: Math.sin(bot.angle) };
+  if (bot.goal && bot.panic <= 0) {
+    const bh = bot.body[0], gx = bot.goal.x - bh.x, gy = bot.goal.y - bh.y, m = Math.hypot(gx, gy);
+    if (m > .5) {
+      eyeDir = { x: lerp(eyeDir.x, gx / m, .55), y: lerp(eyeDir.y, gy / m, .55) };
+      const n = Math.hypot(eyeDir.x, eyeDir.y); eyeDir.x /= n; eyeDir.y /= n;
+    }
+  }
+  drawEyes(bot.body[0], eyeDir, 6.2, bot.panic > 0);
   if (shielded) {
     const h = bot.body[0];
     ctx.save();
