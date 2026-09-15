@@ -34,7 +34,7 @@ npm run build
   - **Shield** (7s): snake-to-snake collisions pass through harmlessly when either side is shielded. Walls still kill — shields cannot save you there.
   - **Magnet** (7s): pulls foods, remains and drifting stars within radius toward you; anything outside the radius stays perfectly still. Power-ups are immune to the field.
 - **Collision rules**: hitting a wall always kills (even with a shield); hitting another snake without shields kills the one that moved into the other.
-- **AI snakes**: lookahead pathfinding, threat prediction, distinct personalities (greed / caution / aggression), variable speed, and the same growth formula as the player — they hunt food, grow long, and burn body length when sprinting.
+- **AI snakes**: human-like bots — limited vision (they only see their own "screen"), reaction delay, target locking with chase-out-of-view persistence, panic reflexes on close threats, per-bot skill levels and personalities (greed / caution / inertia / aggression), plus lookahead pathfinding and threat prediction. They hunt food, grow long, and burn body length when sprinting, same growth formula as the player.
 - **Learning brain**: all AI snakes share an online reinforcement-learning brain (TD(0) with ε-greedy exploration) that keeps training during play and persists across sessions in `localStorage`.
 - **Records & guide**: every battle is saved locally (last 50) on the records page; the guide page documents all mechanics.
 
@@ -74,6 +74,6 @@ npm run build
   - **护盾**（7 秒）：蛇对蛇相撞时任一方有护盾则无伤穿过；但撞墙必死，护盾无法幸免。
   - **磁力**（7 秒）：吸附半径内的食物、残骸和漂移星星；半径外的目标保持静止；护盾/磁铁道具不受磁场影响。
 - **碰撞规则**：撞墙必死（护盾无效）；无护盾撞到其他蛇时，撞击方死亡。
-- **AI 蛇**：前瞻寻路、威胁预判、独立性格（贪食/谨慎/侵略）、动态变速，成长公式与玩家完全一致——会抢食、变长，冲刺时燃烧蛇身。
+- **AI 蛇**：拟人行为模型——有限视野（只看得到自己的"屏幕"）、反应延迟、目标锁定（盯上就追、追出视野不换）、贴脸威胁恐慌急转、个体熟练度与独立性格（贪食/谨慎/惯性/侵略），加上前瞻寻路与威胁预判；成长公式与玩家完全一致——会抢食、变长，冲刺时燃烧蛇身。
 - **学习大脑**：全体 AI 共享在线强化学习大脑（TD(0) 时序差分 + ε-探索），对局中持续训练，学习记忆保存在浏览器 `localStorage` 中跨会话延续。
 - **战绩与指南**：每局战绩自动保存（最近 50 条）至战绩榜页；玩法指南页收录全部机制说明。
