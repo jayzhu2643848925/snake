@@ -63,7 +63,7 @@
         body.innerHTML = records.map((r) => `
           <tr class="${r.record ? 'hot' : ''}">
             <td>${r.date}</td>
-            <td>${r.difficulty}</td>
+            <td><em class="diff-pill ${r.difficulty === '新手' ? 'easy' : r.difficulty === '标准' ? 'normal' : 'hard'}">${r.difficulty}</em></td>
             <td><strong>${r.score}</strong>${r.record ? ' <em class="record-badge">★</em>' : ''}</td>
             <td>${r.length}</td>
             <td>${r.kills}</td>

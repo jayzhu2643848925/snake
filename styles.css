@@ -77,3 +77,182 @@ body.is-fullscreen .game-layout{grid-template-columns:150px minmax(0,1fr)}
 .records-actions .brain-reset{margin-top:0;width:auto;padding:6px 14px}
 .records-count{color:#687b97;font-size:11px;letter-spacing:.4px}
 @media(max-width:720px){.main-nav{margin-left:8px}.main-nav a{padding:5px 7px;font-size:10px}.page-body{padding:24px 0 18px}.records-table th,.records-table td{padding:7px 6px}.records-table th:nth-child(6),.records-table td:nth-child(6){display:none}}
+
+/* ============================================================
+   视觉精修层 · Visual Polish
+   氛围光效 / 玻璃拟态 / HUD 角标 / 微交互
+   ============================================================ */
+
+/* ---- 全局氛围:极光漂移 + 微星尘(位于内容之下,纯装饰) ---- */
+body { isolation: isolate; }
+body::after {
+  content: ''; position: fixed; inset: -12%; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(circle 1.6px at 12% 18%, rgba(222,243,255,.5) 60%, transparent),
+    radial-gradient(circle 1.1px at 32% 64%, rgba(222,243,255,.36) 60%, transparent),
+    radial-gradient(circle 1.8px at 58% 12%, rgba(194,242,255,.46) 60%, transparent),
+    radial-gradient(circle 1.2px at 76% 44%, rgba(222,243,255,.38) 60%, transparent),
+    radial-gradient(circle 1.5px at 88% 72%, rgba(204,246,255,.44) 60%, transparent),
+    radial-gradient(circle 1.1px at 44% 86%, rgba(222,243,255,.34) 60%, transparent),
+    radial-gradient(circle 1.4px at 68% 92%, rgba(194,242,255,.4) 60%, transparent),
+    radial-gradient(circle 1.2px at 8% 52%, rgba(222,243,255,.36) 60%, transparent),
+    radial-gradient(52% 42% at 16% 10%, rgba(50,230,208,.10), transparent 68%),
+    radial-gradient(46% 38% at 86% 80%, rgba(148,120,255,.10), transparent 68%),
+    radial-gradient(40% 34% at 72% 16%, rgba(64,158,255,.09), transparent 68%);
+  animation: bgDrift 32s ease-in-out infinite alternate;
+}
+@keyframes bgDrift { from { transform: translate3d(-1.2%, -1%, 0); } to { transform: translate3d(1.2%, 1.2%, 0); } }
+
+/* ---- 选区 / 滚动条 / 键盘焦点 ---- */
+::selection { background: rgba(50,230,208,.3); color: #f4fffc; }
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #1d3452; border: 2px solid #0a1526; border-radius: 8px; }
+::-webkit-scrollbar-thumb:hover { background: #2a4d75; }
+a:focus-visible, button:focus-visible { outline: 2px solid rgba(50,230,208,.65); outline-offset: 2px; }
+
+/* ---- 顶栏:渐变分隔线 / 品牌辉光 / 状态脉冲 ---- */
+.topbar { border-bottom: 1px solid transparent; border-image: linear-gradient(90deg, transparent 4%, rgba(50,230,208,.4) 30%, rgba(189,255,77,.28) 62%, transparent 96%) 1; }
+.brand { transition: transform .3s ease; }
+.brand:hover { transform: translateY(-1px); }
+.brand-mark { box-shadow: 0 0 16px rgba(50,230,208,.35), inset 0 1px 0 rgba(255,255,255,.5); transition: transform .5s cubic-bezier(.34,1.56,.64,1), box-shadow .3s; }
+.brand:hover .brand-mark { transform: rotate(3deg) scale(1.07); box-shadow: 0 0 24px rgba(50,230,208,.55), inset 0 1px 0 rgba(255,255,255,.5); }
+.game-status { padding: 5px 11px; border: 1px solid rgba(143,182,224,.16); border-radius: 999px; background: rgba(10,22,38,.45); }
+.game-status i { animation: statusPulse 2.4s ease-in-out infinite; }
+@keyframes statusPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(189,255,77,.4), 0 0 10px var(--lime); } 50% { box-shadow: 0 0 0 5px rgba(189,255,77,0), 0 0 14px var(--lime); } }
+.sound-button { transition: color .2s, border-color .2s, background .2s, box-shadow .2s, transform .12s; }
+.sound-button:hover { color: var(--cyan); border-color: rgba(50,230,208,.5); background: rgba(50,230,208,.08); box-shadow: 0 0 14px rgba(50,230,208,.16); }
+.sound-button:active { transform: scale(.9); }
+.main-nav a { transition: color .2s, background .2s, box-shadow .2s, transform .2s; }
+.main-nav a:hover { transform: translateY(-1px); }
+.main-nav a.active { box-shadow: inset 0 0 0 1px rgba(50,230,208,.26), 0 0 18px rgba(50,230,208,.16); text-shadow: 0 0 12px rgba(50,230,208,.5); }
+
+/* ---- 玻璃拟态:侧栏 / 指南卡 / 战绩面板 ---- */
+.sidebar, .guide-card, .records-panel {
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+  backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: inset 0 1px 0 rgba(233,245,255,.07), 0 18px 42px rgba(2,8,18,.45);
+}
+
+/* ---- 排行榜:前三名奖牌色 / 悬停高亮(无过渡,列表每帧重绘) ---- */
+.rank-item { border-radius: 5px; }
+.rank-item:hover { background: rgba(123,182,255,.07); }
+.rank-item:nth-child(1) .rank-num { color: #ffd87a; text-shadow: 0 0 9px rgba(255,216,122,.65); }
+.rank-item:nth-child(2) .rank-num { color: #d9e4f4; text-shadow: 0 0 9px rgba(217,228,244,.5); }
+.rank-item:nth-child(3) .rank-num { color: #f2a06b; text-shadow: 0 0 9px rgba(242,160,107,.55); }
+.rank-item.mine { box-shadow: inset 2px 0 0 var(--cyan); }
+.panel-heading b { box-shadow: 0 0 12px rgba(189,255,77,.35); }
+
+/* ---- 数据卡 / 今日挑战:悬停浮起 + 流光扫过 ---- */
+.stat-card { border: 1px solid transparent; transition: border-color .25s, box-shadow .25s, transform .25s; }
+.stat-card:hover { border-color: rgba(50,230,208,.32); box-shadow: 0 0 18px rgba(50,230,208,.12); transform: translateY(-2px); }
+.challenge { position: relative; overflow: hidden; }
+.challenge::after { content: ''; position: absolute; inset: 0; pointer-events: none; background: linear-gradient(115deg, transparent 32%, rgba(189,255,77,.07) 47%, transparent 62%); transform: translateX(-130%); animation: challengeSheen 5.6s ease-in-out infinite; }
+@keyframes challengeSheen { 0%, 55% { transform: translateX(-130%); } 88%, 100% { transform: translateX(130%); } }
+.progress i { background-size: 200% 100%; animation: progressFlow 2.4s linear infinite; }
+@keyframes progressFlow { from { background-position: 0 0; } to { background-position: -200% 0; } }
+
+/* ---- 竞技场:HUD 角标括弧 + 能量边框 ---- */
+.arena-frame { border-color: rgba(82,208,220,.4); box-shadow: 0 0 0 5px rgba(66,166,203,.05), 0 0 44px rgba(50,230,208,.1), 0 26px 60px rgba(0,0,0,.5), inset 0 0 60px #02101c; }
+.arena-frame::before {
+  content: ''; position: absolute; inset: -1px; z-index: 1; pointer-events: none; border-radius: inherit; opacity: .9;
+  background:
+    linear-gradient(var(--cyan), var(--cyan)) left top / 22px 2px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) left top / 2px 22px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) right top / 22px 2px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) right top / 2px 22px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) left bottom / 22px 2px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) left bottom / 2px 22px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) right bottom / 22px 2px no-repeat,
+    linear-gradient(var(--cyan), var(--cyan)) right bottom / 2px 22px no-repeat;
+  filter: drop-shadow(0 0 5px rgba(50,230,208,.8));
+}
+.hud { box-shadow: 0 8px 24px rgba(2,8,18,.4), inset 0 1px 0 rgba(233,245,255,.06); }
+.hud strong { text-shadow: 0 0 14px rgba(126,244,224,.35); }
+
+/* ---- 雷达:扫描线旋转 ---- */
+.mini-map { background: rgba(5,13,24,.5); overflow: hidden; box-shadow: 0 0 18px rgba(2,8,18,.5), inset 0 0 16px rgba(50,230,208,.07); }
+.mini-map::after { content: ''; position: absolute; inset: -42%; pointer-events: none; border-radius: 50%; background: conic-gradient(from 0deg, rgba(50,230,208,.18), transparent 24%); animation: radarSweep 3.8s linear infinite; }
+@keyframes radarSweep { to { transform: rotate(360deg); } }
+
+/* ---- 开始/结算浮层:毛玻璃卡片 + 渐变标题 + 弹入动画 ---- */
+.game-overlay { -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); transition: opacity .35s, backdrop-filter .35s; }
+.game-overlay.hidden { -webkit-backdrop-filter: blur(0); backdrop-filter: blur(0); }
+.overlay-card {
+  position: relative; overflow: hidden; padding: 36px 54px 32px; border-radius: 16px;
+  border: 1px solid rgba(110,200,225,.22);
+  background: linear-gradient(165deg, rgba(13,28,48,.78), rgba(5,12,23,.72));
+  -webkit-backdrop-filter: blur(14px) saturate(1.3); backdrop-filter: blur(14px) saturate(1.3);
+  box-shadow: 0 30px 80px rgba(0,0,0,.5), inset 0 1px 0 rgba(233,245,255,.08);
+}
+.overlay-card::before { content: ''; position: absolute; top: 0; left: 14%; right: 14%; height: 1px; background: linear-gradient(90deg, transparent, rgba(50,230,208,.9), rgba(189,255,77,.9), transparent); box-shadow: 0 0 14px rgba(50,230,208,.55); }
+.overlay-card::after { content: ''; position: absolute; left: 0; right: 0; bottom: -42%; height: 72%; pointer-events: none; background: radial-gradient(52% 62% at 50% 100%, rgba(50,230,208,.15), transparent 70%); }
+.game-overlay:not(.hidden) .overlay-card { animation: cardPop .5s cubic-bezier(.2,.9,.3,1.15); }
+@keyframes cardPop { from { opacity: 0; transform: translateY(16px) scale(.96); } }
+.overlay-card h1 {
+  background: linear-gradient(92deg, #ecfdff 8%, var(--cyan) 48%, var(--lime) 92%);
+  -webkit-background-clip: text; background-clip: text; color: transparent;
+  filter: drop-shadow(0 2px 16px rgba(50,230,208,.35));
+}
+.difficulty { transition: color .2s, border-color .2s, background .2s, box-shadow .2s, transform .18s; }
+.difficulty:hover { transform: translateY(-1px); }
+.difficulty.active { box-shadow: 0 0 16px rgba(50,230,208,.42), inset 0 1px 0 rgba(255,255,255,.35); }
+.primary-button { position: relative; overflow: hidden; transition: transform .18s, box-shadow .25s; }
+.primary-button::after { content: ''; position: absolute; top: 0; bottom: 0; left: -70%; width: 44%; background: linear-gradient(105deg, transparent, rgba(255,255,255,.5), transparent); transform: skewX(-20deg); animation: btnShine 3.4s ease-in-out infinite; }
+@keyframes btnShine { 0%, 58% { left: -70%; } 92%, 100% { left: 145%; } }
+.primary-button:hover { transform: translateY(-2px); box-shadow: 0 12px 32px rgba(50,230,208,.36); }
+.primary-button:active { transform: translateY(0) scale(.97); }
+
+/* ---- 方向轮盘:雷达刻度环缓转 ---- */
+.wheel-controls { border-color: rgba(71,225,215,.3); box-shadow: inset 0 0 24px rgba(50,230,208,.06); }
+.wheel-controls::before { content: ''; position: absolute; inset: -9px; border-radius: 50%; border: 1px dashed rgba(50,230,208,.22); animation: wheelSpin 48s linear infinite; pointer-events: none; }
+@keyframes wheelSpin { to { transform: rotate(360deg); } }
+
+/* ---- 内容页:标题渐变 / 指南卡悬浮 + 交错入场 + 色彩轮换 ---- */
+.page-hero .eyebrow { display: flex; align-items: center; gap: 10px; }
+.page-hero .eyebrow::before { content: ''; width: 28px; height: 1px; background: linear-gradient(90deg, var(--cyan), transparent); box-shadow: 0 0 8px rgba(50,230,208,.7); }
+.page-hero h1 { background: linear-gradient(92deg, #f2fbff 30%, #a9f4ea); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.guide-card { position: relative; overflow: hidden; --accent: var(--cyan); transition: transform .28s, border-color .28s, box-shadow .28s; animation: cardIn .55s cubic-bezier(.22,.9,.36,1) backwards; }
+.guide-card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, var(--accent), transparent 62%); opacity: 0; transition: opacity .3s; }
+.guide-card:hover { transform: translateY(-4px); border-color: rgba(50,230,208,.38); box-shadow: 0 22px 46px rgba(2,8,18,.55), 0 0 26px rgba(50,230,208,.08), inset 0 1px 0 rgba(233,245,255,.07); }
+.guide-card:hover::before { opacity: 1; }
+@keyframes cardIn { from { opacity: 0; transform: translateY(18px); } }
+.guide-card .eyebrow { color: var(--accent); }
+.guide-card li:before { background: var(--accent); box-shadow: 0 0 6px var(--accent); }
+.guide-card:nth-child(4n+2) { --accent: #79f3ff; }
+.guide-card:nth-child(4n+3) { --accent: #bdff4d; }
+.guide-card:nth-child(4n+4) { --accent: #ff9d5c; }
+.guide-card:nth-child(4n+5) { --accent: #32e6d0; }
+.guide-card:nth-child(1) { animation-delay: .02s }
+.guide-card:nth-child(2) { animation-delay: .07s }
+.guide-card:nth-child(3) { animation-delay: .12s }
+.guide-card:nth-child(4) { animation-delay: .17s }
+.guide-card:nth-child(5) { animation-delay: .22s }
+.guide-card:nth-child(6) { animation-delay: .27s }
+.guide-card:nth-child(7) { animation-delay: .32s }
+.guide-card:nth-child(8) { animation-delay: .37s }
+
+/* ---- 战绩榜:行悬停 / 难度彩色徽章 / 顶部光带 ---- */
+.records-panel { position: relative; overflow: hidden; }
+.records-panel::before { content: ''; position: absolute; top: 0; left: 12%; right: 12%; height: 1px; background: linear-gradient(90deg, transparent, rgba(50,230,208,.7), transparent); }
+.records-table tbody tr { transition: background .18s; }
+.records-table tbody tr:hover td { background: rgba(50,230,208,.05); }
+.diff-pill { display: inline-block; padding: 2px 9px; border-radius: 999px; font: 600 10px 'DM Sans',sans-serif; letter-spacing: .5px; font-style: normal; }
+.diff-pill.easy { color: #9ef65f; background: rgba(158,246,95,.1); border: 1px solid rgba(158,246,95,.3); }
+.diff-pill.normal { color: #5ff0dc; background: rgba(50,230,208,.09); border: 1px solid rgba(50,230,208,.32); }
+.diff-pill.hard { color: #ffa07d; background: rgba(255,130,95,.09); border: 1px solid rgba(255,150,115,.32); }
+.records-empty { border: 1px dashed rgba(123,182,255,.22); border-radius: 12px; }
+
+/* ---- 页脚渐变线 ---- */
+footer { border-top: 1px solid transparent; border-image: linear-gradient(90deg, transparent, rgba(50,230,208,.3), transparent) 1; }
+
+/* ---- 动效偏好降级 & 移动端适配 ---- */
+@media (prefers-reduced-motion: reduce) {
+  body::after, .wheel-controls::before, .mini-map::after, .primary-button::after, .challenge::after, .progress i { animation: none; }
+  .guide-card, .game-overlay:not(.hidden) .overlay-card { animation: none; }
+}
+@media (max-width: 720px) {
+  .overlay-card { padding: 24px 22px; border-radius: 13px; }
+  .guide-card:hover { transform: none; }
+  .stat-card:hover { transform: none; }
+}
