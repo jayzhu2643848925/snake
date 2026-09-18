@@ -792,7 +792,8 @@ function draw(time) {
   ctx.translate(W / 2, H / 2);
   ctx.scale(CAM_ZOOM, CAM_ZOOM);
   ctx.translate(-cam.x, -cam.y);
-  drawGrid();
+  drawGrid(time);
+  drawWalls(time);
   foods.forEach((f) => drawFood(f, time));
   powerUps.forEach((item) => drawPowerUp(item, time));
   remains.forEach(drawRemains);
@@ -808,15 +809,48 @@ function draw(time) {
   else if (goFlash > 0) drawGo();
   if (paused) drawPause();
 }
-function drawGrid() {
+// 背景星尘:世界坐标固定的微光星点,随镜头移动产生视差,微微闪烁
+const bgStars = Array.from({ length: 90 }, () => ({
+  x: Math.random() * W, y: Math.random() * H,   // 世界像素坐标(战场全域)
+  r: .6 + Math.random() * 1.2,                  // 边长(px)
+  a: .1 + Math.random() * .28,                  // 基础亮度
+  p: Math.random() * Math.PI * 2,               // 闪烁相位
+  s: 900 + Math.random() * 2200,                // 闪烁周期(ms)
+}));
+function drawGrid(time) {
   ctx.strokeStyle = 'rgba(89,171,202,.11)'; ctx.lineWidth = 1;
   ctx.beginPath();
   for (let x = 0; x <= W; x += cell) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
   for (let y = 0; y <= H; y += cell) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
   ctx.stroke();
+  // 每 4 格一条强调线,网格更有层次
+  ctx.strokeStyle = 'rgba(96,178,208,.17)';
+  ctx.beginPath();
+  for (let x = 0; x <= W; x += cell * 4) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
+  for (let y = 0; y <= H; y += cell * 4) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
+  ctx.stroke();
+  // 星尘:随镜头移动产生视差,亮度按各自周期呼吸
+  ctx.fillStyle = '#cfeeff';
+  for (const s of bgStars) {
+    ctx.globalAlpha = s.a * (.55 + .45 * Math.sin(time / s.s * Math.PI * 2 + s.p));
+    ctx.fillRect(s.x - s.r / 2, s.y - s.r / 2, s.r, s.r);
+  }
+  ctx.globalAlpha = 1;
   const glow = ctx.createRadialGradient(W / 2, H / 2, 20, W / 2, H / 2, 500);
   glow.addColorStop(0, 'rgba(21,89,112,.16)'); glow.addColorStop(1, 'rgba(2,8,15,0)');
   ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+}
+// 战场边界:霓虹能量墙——呼吸光晕 + 流动虚线,撞墙必死的可视提示
+function drawWalls(time) {
+  ctx.save();
+  ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(50,230,208,.35)';
+  ctx.shadowColor = 'rgba(50,230,208,.75)'; ctx.shadowBlur = 12;
+  ctx.strokeRect(1, 1, W - 2, H - 2);
+  ctx.shadowBlur = 0;
+  ctx.setLineDash([16, 10]); ctx.lineDashOffset = -time / 45;
+  ctx.lineWidth = 1.5; ctx.strokeStyle = 'rgba(158,255,240,.5)';
+  ctx.strokeRect(1, 1, W - 2, H - 2);
+  ctx.restore();
 }
 function drawFood(f, time) {
   const x = f.x * cell, y = f.y * cell, r = 4 + Math.sin(time / 220 + f.pulse) * 1.5;
