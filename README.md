@@ -23,7 +23,8 @@ npm run build
 
 - Drag the floating wheel (bottom-left of the arena) for 360° steering.
 - `WASD` / arrow keys for directional movement.
-- `Space` or the wheel center to pause.
+- `Space` or the topbar pause button (top-right) to pause.
+- The home button (top-right) abandons the current round and returns to the start screen.
 - `F` or the topbar button to toggle fullscreen. Starting a round enters fullscreen automatically.
 
 ## Gameplay
@@ -63,7 +64,8 @@ npm run build
 
 - 拖动竞技场左下角的悬浮轮盘，360° 自由转向。
 - `WASD` / 方向键移动。
-- `Space` 或轮盘中心按钮暂停。
+- `Space` 或右上角暂停键暂停。
+- 右上角返回主页面按钮：放弃当前对局，回到开始界面。
 - `F` 或顶栏按钮切换全屏；点击「开始战斗 / 再来一局」会自动进入全屏。
 
 ## 玩法
