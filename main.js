@@ -10,6 +10,7 @@ const ui = {
   knob: $('.wheel-knob'), difficultyBadge: $('#difficultyBadge'),
   buffBar: $('#buffBar'), resultStats: $('#resultStats'),
   fullscreen: $('#fullscreenButton'),
+  pause: $('#pauseButton'), home: $('#homeButton'),
 };
 
 // ===== 常量配置 =====
@@ -152,6 +153,7 @@ function start() {
   updateUI(); // 倒计时期间也显示护盾状态
   ui.overlay.classList.add('hidden');
   ui.status.textContent = '准备中';
+  syncPauseUI();
   last = performance.now();
   requestAnimationFrame(loop);
 }
@@ -159,9 +161,35 @@ function togglePause() {
   if (!running) return;
   paused = !paused;
   ui.status.textContent = paused ? '已暂停' : '正在战斗';
+  syncPauseUI();
+}
+// 同步右上角暂停键:对局中可点,暂停时切换为播放图标
+function syncPauseUI() {
+  if (!ui.pause) return;
+  ui.pause.disabled = !running;
+  ui.pause.classList.toggle('paused', paused);
+  ui.pause.setAttribute('aria-label', paused ? '继续游戏' : '暂停游戏');
+  ui.pause.title = paused ? '继续游戏 (空格)' : '暂停游戏 (空格)';
+}
+// 返回主页面:放弃当前对局(不计入战绩),回到开始界面
+function showHome() {
+  running = false; paused = false; countdown = 0;
+  ++deathToken; // 若正处于死亡动画循环中,立即接管界面
+  ui.overlay.querySelector('h1').textContent = '蛇域竞技场';
+  ui.overlay.querySelector('p').textContent = '在霓虹战场中生存、成长、称霸排行榜。';
+  ui.resultStats.classList.add('hidden');
+  ui.start.innerHTML = '开始战斗 <span class="arrow">→</span>';
+  ui.start.classList.remove('again');
+  ui.overlay.classList.remove('hidden');
+  ui.status.textContent = '竞技场已连接';
+  reset();
+  draw(0);
+  syncPauseUI();
+  beep(520, .07, .035);
 }
 function gameOver() {
   running = false;
+  syncPauseUI();
   const head = snake[0];
   burst(head.x, head.y, '#ff785c', 26);
   burst(head.x, head.y, '#ffe06b', 18);
@@ -1105,7 +1133,7 @@ function drawPause() {
   ctx.fillText('已暂停', W / 2, H / 2 - 12);
   ctx.fillStyle = '#8b9ab4';
   ctx.font = "500 13px 'DM Sans',sans-serif";
-  ctx.fillText('按 空格 键继续', W / 2, H / 2 + 20);
+  ctx.fillText('按 空格 键或右上角 ▶ 继续', W / 2, H / 2 + 20);
 }
 function drawRadar(time) {
   // 极简雷达:透明背景,只标记排行榜前三名(含玩家)的蛇头位置
@@ -1186,7 +1214,6 @@ window.addEventListener('keydown', (e) => {
 });
 
 ui.wheel.addEventListener('pointerdown', (e) => {
-  if (e.target.closest('.wheel-center')) { togglePause(); return; }
   wheelActive = true;
   ui.wheel.setPointerCapture(e.pointerId);
   setWheelDirection(e);
@@ -1203,6 +1230,11 @@ document.querySelectorAll('.difficulty').forEach((button) => button.addEventList
 }));
 
 ui.start.addEventListener('click', start);
+
+// 右上角控制:暂停键 / 返回主页面
+ui.pause.addEventListener('click', togglePause);
+ui.home.addEventListener('click', showHome);
+
 ui.sound.addEventListener('click', () => {
   soundOn = !soundOn;
   ui.sound.classList.toggle('off', !soundOn);
@@ -1226,6 +1258,7 @@ if (ui.brainReset) ui.brainReset.addEventListener('click', () => {
 // ===== 初始化 =====
 reset();
 draw(0);
+syncPauseUI();
 
 // ===== 调试接口(只读,浏览器控制台可用) =====
 Object.defineProperty(window, '__snake', { value: {
