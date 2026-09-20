@@ -2,7 +2,7 @@
 
 **English** | **中文**
 
-A neon-style 360° snake arena with smart AI opponents, a shared reinforcement-learning brain, power-ups, and an immersive player-follow camera.
+A neon-style 360° snake arena with smart AI opponents, a shared reinforcement-learning brain, power-ups, and an immersive player-follow camera. Fully playable on desktop and mobile (Android): touch joystick steering, haptic feedback, landscape layout, and install-to-home-screen.
 
 ## Run Locally
 
@@ -19,6 +19,20 @@ Multi-page build (arena / records / guide) via Vite:
 npm run build
 ```
 
+## Native App Packages (Android APK)
+
+The game is wrapped as a native app with [Capacitor](https://capacitorjs.com) (WebView shell): touch joystick, haptics (Android back button & vibration handled natively), landscape-locked, branded icons & splash screens.
+
+```bash
+npm run apk   # Android: signed release APK + debug APK
+```
+
+- **Android output**: `android/app/build/outputs/apk/release/app-release.apk` (also `debug/app-debug.apk`). Install directly on any Android 7.0+ phone (enable "install unknown apps").
+- **Release signing**: self-signed keystore at `android/snake-arena-release.keystore` (alias `snakearena`, password in `android/keystore.properties`). Generate your own keystore before publishing to Google Play.
+- **Prerequisites (once)**: JDK 21 (`brew install openjdk@21`) and Android SDK (`brew install --cask android-commandlinetools`, packages `platforms;android-36 build-tools;36.0.0 platform-tools`, `android/local.properties`).
+- Gradle distribution is fetched from the Tencent mirror (`android/gradle/wrapper/gradle-wrapper.properties`) — swap back to `services.gradle.org` if you prefer.
+- Rebuild flow after code changes: `npm run build` → `npx cap sync android` → package again.
+
 ## Controls
 
 - Drag the floating wheel (bottom-left of the arena) for 360° steering.
@@ -26,6 +40,16 @@ npm run build
 - `Space` or the topbar pause button (top-right) to pause.
 - The home button (top-right) abandons the current round and returns to the start screen.
 - `F` or the topbar button to toggle fullscreen. Starting a round enters fullscreen automatically.
+
+## Mobile (Android)
+
+- **Touch joystick**: press and drag anywhere on the battlefield — a virtual joystick appears right under your finger for 360° steering. Release to keep the current heading. The bottom-left wheel still works in parallel.
+- **Haptics** (Android): short vibration on round start, power-up pickups, kills and death.
+- **Landscape**: starting a round requests fullscreen and locks landscape; a rotate hint shows in portrait.
+- **Auto-pause**: switching apps, incoming calls or locking the screen pauses the round automatically.
+- **Safe areas & gestures**: notch insets respected, pinch/double-tap zoom disabled, long-press menus blocked on the canvas.
+- **Install to home screen**: add the site to your home screen to launch it as a standalone fullscreen app (via Web App Manifest).
+- To test on a real phone, expose the dev server on your LAN: `npm run dev -- --host`, then open the printed network URL on the device.
 
 ## Gameplay
 
@@ -43,7 +67,7 @@ npm run build
 
 **English** | **中文**
 
-霓虹风格的 360° 蛇竞技场：智能 AI 对手、共享强化学习大脑、道具系统与沉浸式玩家跟随视角。
+霓虹风格的 360° 蛇竞技场：智能 AI 对手、共享强化学习大脑、道具系统与沉浸式玩家跟随视角。桌面与手机（安卓）全平台可玩：触屏摇杆转向、震动反馈、横屏布局、可安装到主屏幕。
 
 ## 本地运行
 
@@ -60,6 +84,20 @@ npm run dev
 npm run build
 ```
 
+## 原生安装包打包（安卓 APK）
+
+游戏通过 [Capacitor](https://capacitorjs.com) 封装为原生 App（WebView 壳）：触屏摇杆、震动反馈、安卓返回键原生处理、锁横屏、品牌图标与启动屏。
+
+```bash
+npm run apk   # 安卓：签名 release APK + debug APK
+```
+
+- **安卓产物**：`android/app/build/outputs/apk/release/app-release.apk`（另有 `debug/app-debug.apk`）。安卓 7.0+ 手机可直接安装（需开启「允许安装未知来源应用」）。
+- **release 签名**：自签名证书位于 `android/snake-arena-release.keystore`（别名 `snakearena`，口令见 `android/keystore.properties`）。上架 Google Play 前请换成自己的正式证书。
+- **环境准备（仅首次）**：JDK 21（`brew install openjdk@21`）、Android SDK（`brew install --cask android-commandlinetools` 后用 sdkmanager 安装 `platforms;android-36 build-tools;36.0.0 platform-tools`，路径已写入 `android/local.properties`）。
+- Gradle 发行版已切换为腾讯镜像（`android/gradle/wrapper/gradle-wrapper.properties`），海外网络可改回官方源。
+- 代码更新后重新打包：`npm run build` → `npx cap sync android` → 再次执行打包命令。
+
 ## 操作
 
 - 拖动竞技场左下角的悬浮轮盘，360° 自由转向。
@@ -67,6 +105,16 @@ npm run build
 - `Space` 或右上角暂停键暂停。
 - 右上角返回主页面按钮：放弃当前对局，回到开始界面。
 - `F` 或顶栏按钮切换全屏；点击「开始战斗 / 再来一局」会自动进入全屏。
+
+## 移动端支持（安卓）
+
+- **触屏摇杆**：按住战场任意位置拖动，虚拟摇杆即时出现在手指处，360° 自由转向；松手保持当前航向；左下角固定轮盘可并行使用。
+- **震动反馈**（安卓）：开局、拾取道具、击杀、阵亡四类关键时刻短震动。
+- **横屏**：开局自动请求全屏并锁定横屏；竖屏时显示「横屏体验更佳」提示。
+- **自动暂停**：切后台、来电、锁屏时自动暂停，保护对局进度。
+- **安全区与手势**：适配刘海屏；禁用双击/双指缩放、下拉刷新与画布长按菜单。
+- **安装到主屏幕**：安卓通过「添加到主屏幕」可全屏横屏独立窗口运行（Web App Manifest）。
+- 真机调试：`npm run dev -- --host` 暴露局域网地址后，手机连同一 Wi-Fi 访问即可。
 
 ## 玩法
 
