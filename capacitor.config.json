@@ -1,0 +1,8 @@
+{
+  "appId": "com.snakearena.app",
+  "appName": "蛇域竞技场",
+  "webDir": "dist",
+  "android": {
+    "backgroundColor": "#07101e"
+  }
+}
