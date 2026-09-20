@@ -44,6 +44,20 @@ let countdown = 0, lastCount = 0, goFlash = 0;
 let shake = 0, deathFlash = 0, elapsed = 0, deathToken = 0;
 let cam = { x: 0, y: 0 }; // 玩家视角镜头中心(世界像素坐标,平滑跟随蛇头并朝前进方向前探)
 
+// ===== 移动端(安卓)支持 =====
+const isTouch = matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+// 安卓触觉反馈:原生 App 壳内走 Capacitor Haptics 插件,浏览器内走 navigator.vibrate(均不可用时自动跳过)
+function haptic(pattern) {
+  try {
+    const cap = window.Capacitor;
+    if (cap && cap.isPluginAvailable && cap.isPluginAvailable('Haptics')) {
+      cap.Plugins.Haptics.impact({ style: Array.isArray(pattern) || pattern >= 20 ? 'HEAVY' : pattern >= 12 ? 'MEDIUM' : 'LIGHT' });
+      return;
+    }
+    navigator.vibrate && navigator.vibrate(pattern);
+  } catch { /* 忽略 */ }
+}
+
 // ===== 工具函数 =====
 const dist = (a, b) => Math.hypot(a.x - b.x, a.y - b.y);
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -194,6 +208,7 @@ function gameOver() {
   burst(head.x, head.y, '#ff785c', 26);
   burst(head.x, head.y, '#ffe06b', 18);
   shake = 16; deathFlash = 650;
+  haptic([70, 50, 90]); // 阵亡震动反馈(安卓)
   const prevBest = best;
   best = Math.max(best, score);
   localStorage.snakeArenaBest = best;
@@ -252,7 +267,7 @@ function loop(now) {
       countdown -= delta;
       const count = Math.ceil(countdown / 800);
       if (count !== lastCount && count > 0) { lastCount = count; beep(420, .09, .045); }
-      if (countdown <= 0) { goFlash = 500; ui.status.textContent = '正在战斗'; beep(760, .16, .05); }
+      if (countdown <= 0) { goFlash = 500; ui.status.textContent = '正在战斗'; beep(760, .16, .05); haptic(15); }
     } else {
       elapsed += delta;
       goFlash = Math.max(0, goFlash - delta);
@@ -324,6 +339,7 @@ function tick() {
       popup(item.x, item.y, item.type === 'magnet' ? '磁力吸附!' : '护盾展开!', color, 14);
       beep(item.type === 'magnet' ? 520 : 760, .12, .05);
       beep(item.type === 'magnet' ? 660 : 980, .1, .035, 'triangle', .09);
+      haptic(14); // 拾取道具震动反馈(安卓)
       return false;
     }
     return true;
@@ -648,6 +664,7 @@ function killBot(bot, byPlayer, text = '击杀!') {
     popup(h.x, h.y, text, bot.color, 13);
     beep(240, .12, .035, 'sawtooth');
     shake = Math.max(shake, 5);
+    haptic(22); // 击杀震动反馈(安卓)
   }
 }
 function moveBot(bot) {
@@ -1133,7 +1150,7 @@ function drawPause() {
   ctx.fillText('已暂停', W / 2, H / 2 - 12);
   ctx.fillStyle = '#8b9ab4';
   ctx.font = "500 13px 'DM Sans',sans-serif";
-  ctx.fillText('按 空格 键或右上角 ▶ 继续', W / 2, H / 2 + 20);
+  ctx.fillText(isTouch ? '点击右上角 ▶ 按钮继续' : '按 空格 键或右上角 ▶ 继续', W / 2, H / 2 + 20);
 }
 function drawRadar(time) {
   // 极简雷达:透明背景,只标记排行榜前三名(含玩家)的蛇头位置
@@ -1176,12 +1193,19 @@ function setWheelDirection(event) {
 
 // ===== 全屏控制 =====
 const fullscreenElement = () => document.fullscreenElement || document.webkitFullscreenElement;
+// 横屏锁定:安卓进入全屏后自动转为横屏(桌面不支持时静默跳过)
+function lockLandscape() {
+  try {
+    if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(() => { /* 拒绝或不支持 */ });
+  } catch { /* 忽略 */ }
+}
 async function toggleFullscreen() {
   const root = document.documentElement;
   try {
     if (!fullscreenElement()) {
       if (root.requestFullscreen) await root.requestFullscreen();
       else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen(); // Safari
+      lockLandscape();
     } else if (document.exitFullscreen) await document.exitFullscreen();
     else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); // Safari
   } catch { /* 全屏请求被拒绝时静默忽略 */ }
@@ -1197,8 +1221,8 @@ function syncFullscreenUI() {
 function ensureFullscreen() {
   if (fullscreenElement()) return;
   const root = document.documentElement;
-  if (root.requestFullscreen) root.requestFullscreen().catch(() => { /* 请求被拒绝时静默忽略 */ });
-  else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen(); // Safari
+  if (root.requestFullscreen) root.requestFullscreen().then(lockLandscape).catch(() => { /* 请求被拒绝时静默忽略 */ });
+  else if (root.webkitRequestFullscreen) { root.webkitRequestFullscreen(); lockLandscape(); } // Safari
 }
 
 window.addEventListener('keydown', (e) => {
@@ -1220,6 +1244,46 @@ ui.wheel.addEventListener('pointerdown', (e) => {
 });
 ui.wheel.addEventListener('pointermove', (e) => { if (wheelActive) setWheelDirection(e); });
 ['pointerup', 'pointercancel'].forEach((ev) => ui.wheel.addEventListener(ev, () => (wheelActive = false)));
+
+// ===== 移动端触控(安卓):按住画布任意位置拖动 = 虚拟摇杆 =====
+// 与左下角轮盘并存:触屏用户既可用固定轮盘,也可在战场任意位置按下拖动,
+// 摇杆即时出现在手指处;越过死区才转向,松手后保持航向(360° 连续转向手感)
+const joyEl = $('#touchJoystick'), joyKnob = joyEl ? joyEl.querySelector('.joy-knob') : null;
+const JOY_DEAD = 12, JOY_RANGE = 46; // 触发死区(px) / 摇杆头最大偏移(px)
+const joy = { active: false, id: null, ox: 0, oy: 0 };
+function joyShow(x, y) {
+  if (!joyEl) return;
+  joyEl.classList.remove('hidden');
+  joyEl.style.left = x + 'px';
+  joyEl.style.top = y + 'px';
+}
+function joyKnobTo(dx, dy) {
+  if (!joyKnob) return;
+  const d = Math.hypot(dx, dy), k = d > JOY_RANGE ? JOY_RANGE / d : 1;
+  joyKnob.style.transform = `translate(${dx * k}px, ${dy * k}px)`;
+}
+canvas.addEventListener('pointerdown', (e) => {
+  if (joy.active || !running || paused || e.pointerType === 'mouse') return; // 鼠标用户仍用键盘/轮盘
+  e.preventDefault();
+  joy.active = true; joy.id = e.pointerId;
+  joy.ox = e.clientX; joy.oy = e.clientY;
+  canvas.setPointerCapture(e.pointerId);
+  joyShow(joy.ox, joy.oy); joyKnobTo(0, 0);
+  haptic(8);
+});
+canvas.addEventListener('pointermove', (e) => {
+  if (!joy.active || e.pointerId !== joy.id) return;
+  const dx = e.clientX - joy.ox, dy = e.clientY - joy.oy;
+  if (Math.hypot(dx, dy) > JOY_DEAD) setDir({ x: dx, y: dy });
+  joyKnobTo(dx, dy);
+});
+['pointerup', 'pointercancel'].forEach((ev) => canvas.addEventListener(ev, (e) => {
+  if (!joy.active || e.pointerId !== joy.id) return;
+  joy.active = false; joy.id = null;
+  if (joyEl) joyEl.classList.add('hidden');
+}));
+// 触屏长按会呼出系统菜单打断操控——屏蔽画布上的长按菜单
+canvas.addEventListener('contextmenu', (e) => { if (isTouch) e.preventDefault(); });
 
 document.querySelectorAll('.difficulty').forEach((button) => button.addEventListener('click', () => {
   if (running) return;
@@ -1254,6 +1318,29 @@ if (ui.brainReset) ui.brainReset.addEventListener('click', () => {
   brain.reset(); brainSparkDrawn = -1; updateBrainUI();
   beep(320, .07, .04);
 });
+
+// 切到后台(来电 / 切 App / 锁屏)自动暂停,保护对局进度;回来点右上角继续即可
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && running && !paused) togglePause();
+});
+
+// 安卓物理返回键:对局中先暂停,再按回主页;非对局状态 2 秒内连按两次退出 App
+if (window.Capacitor?.isPluginAvailable?.('App')) {
+  let backExitAt = 0;
+  window.Capacitor.Plugins.App.addListener('backButton', () => {
+    if (running && !paused) { togglePause(); return; }
+    if (running && paused) { showHome(); return; }
+    const now = Date.now();
+    if (now - backExitAt < 2000) window.Capacitor.Plugins.App.exitApp();
+    else { backExitAt = now; beep(320, .06, .03); }
+  });
+}
+
+// 移动端操作提示文案
+if (isTouch) {
+  const hint = document.querySelector('.key-hint span');
+  if (hint) hint.textContent = '按住屏幕拖动 · 360° 自由转向';
+}
 
 // ===== 初始化 =====
 reset();

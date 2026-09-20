@@ -1,0 +1,15 @@
+{
+  "name": "蛇域竞技场 Snake Arena",
+  "short_name": "蛇域竞技场",
+  "description": "在霓虹战场中生存、成长、称霸排行榜的 360° 贪吃蛇对战游戏",
+  "lang": "zh-CN",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#07101e",
+  "theme_color": "#07101e",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

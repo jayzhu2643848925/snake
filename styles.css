@@ -267,3 +267,72 @@ footer { border-top: 1px solid transparent; border-image: linear-gradient(90deg,
   .guide-card:hover { transform: none; }
   .stat-card:hover { transform: none; }
 }
+
+/* ============================================================
+   移动端支持 · Android
+   触屏操控 / 刘海安全区 / 动态视口高 / 手势防误触 / 横竖屏布局
+   ============================================================ */
+
+/* ---- 全局:消除系统手势干扰(双击缩放 / 长按呼出 / 下拉刷新 / 点击高亮) ---- */
+html { -webkit-text-size-adjust: 100%; }
+body { -webkit-tap-highlight-color: transparent; overscroll-behavior-y: none; touch-action: manipulation; -webkit-touch-callout: none; }
+.arena-frame { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+
+/* ---- 动态视口高度:移动端浏览器地址栏收展时不再裁切页面(不识别 dvh 的浏览器回退 100vh) ---- */
+.app-shell { min-height: 100dvh; }
+.arena-frame { max-width: calc((100dvh - 195px) * 1.5); }
+
+/* ---- 触屏设备:竞技场接管全部手势(页面不滚动 / 不缩放 / 不选中) ---- */
+@media (pointer: coarse) {
+  .arena-frame canvas { touch-action: none; }
+}
+
+/* ---- 虚拟摇杆:按住画布任意位置时出现于手指处(纯反馈层,不接收事件) ---- */
+.touch-joystick { position: fixed; z-index: 60; width: 118px; height: 118px; margin: -59px 0 0 -59px; border-radius: 50%; pointer-events: none; }
+.touch-joystick .joy-base { position: absolute; inset: 0; border: 1.5px dashed rgba(120, 236, 255, .55); border-radius: 50%; background: rgba(10, 25, 40, .24); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); }
+.touch-joystick .joy-knob { position: absolute; top: 50%; left: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px; border: 2px solid rgba(223, 252, 255, .92); border-radius: 50%; background: rgba(50, 230, 208, .38); box-shadow: 0 0 18px rgba(50, 230, 208, .65); transition: transform .05s linear; }
+.touch-joystick.hidden { display: none; }
+
+/* ---- 竖屏旋转提示:仅触屏手机竖屏时显示,横屏自动消失 ---- */
+.rotate-hint { position: absolute; left: 50%; bottom: 12px; z-index: 1; transform: translateX(-50%); display: none; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid rgba(50, 230, 208, .32); border-radius: 999px; background: rgba(6, 15, 27, .82); color: #a9f4ea; font: 600 10px 'DM Sans', sans-serif; letter-spacing: .5px; white-space: nowrap; pointer-events: none; }
+.rotate-hint svg { width: 12px; height: 12px; flex: none; animation: rotateNudge 2.4s ease-in-out infinite; }
+@keyframes rotateNudge { 0%, 40%, 100% { transform: rotate(0); } 70% { transform: rotate(-90deg); } }
+@media (pointer: coarse) and (max-width: 720px) and (orientation: portrait) {
+  .rotate-hint { display: flex; }
+}
+
+/* ---- 手机竖屏布局:顶栏收纳 + 刘海屏安全区 ---- */
+@media (max-width: 720px) {
+  .app-shell { padding-left: max(14px, env(safe-area-inset-left)); padding-right: max(14px, env(safe-area-inset-right)); padding-top: env(safe-area-inset-top); }
+  .topbar { gap: 10px; }
+  .brand > span:last-child { display: none; } /* 竖屏只留品牌徽标,给控制按钮腾位 */
+  .game-status span { display: none; }         /* 状态文字折叠为呼吸灯 */
+  .game-status { padding: 5px 8px; }
+}
+@media (max-width: 460px) {
+  .topbar { gap: 7px; }
+  .main-nav { margin-left: 4px; gap: 1px; }
+  .main-nav a { padding: 5px 6px; font-size: 10px; }
+  .sound-button { width: 32px; height: 32px; font-size: 17px; }
+  .topbar-actions { gap: 5px; }
+}
+
+/* ---- 手机横屏布局:压缩顶栏 / 收起侧栏与页脚,竞技场最大化 ---- */
+@media (max-height: 520px) and (orientation: landscape) {
+  .app-shell { padding-left: max(20px, env(safe-area-inset-left)); padding-right: max(20px, env(safe-area-inset-right)); }
+  .topbar { height: 48px; }
+  .game-layout { padding: 8px 0; grid-template-columns: minmax(0, 1fr); }
+  .left-panel { display: none; }
+  footer { display: none; }
+  .arena-frame { max-width: calc((100dvh - 64px) * 1.5); }
+}
+
+/* ---- 移动端降级:减少动效用户 & 触屏悬停无效化 ---- */
+@media (prefers-reduced-motion: reduce) {
+  .touch-joystick .joy-knob, .rotate-hint svg { animation: none; }
+  .touch-joystick .joy-knob { transition: none; }
+}
+@media (pointer: coarse) {
+  .stat-card:hover { transform: none; }
+  .guide-card:hover { transform: none; }
+}
